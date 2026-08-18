@@ -466,6 +466,14 @@ html, body {
 
 .edge-hit:active { cursor: grabbing; }
 
+.edge-endpoint-handle {
+  fill: var(--input-bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+  cursor: crosshair;
+}
+.edge-endpoint-handle:hover { fill: var(--accent); }
+
 .edge-badge circle {
   fill: var(--input-bg);
   stroke: #64748b;

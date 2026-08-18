@@ -20,9 +20,11 @@ no build step, meant to run on GitHub Pages.
 - **Numbered flow arrows** — drag from *any point* on a node's border (not
   just fixed dots) to another node to draw an arrow; click its number badge
   to edit the request-flow order.
-- **Shapeable arrows** — drag a curved arrow's line to bend it; drag a
-  right-angle (orthogonal) arrow's line to slide its elbow. Double-click
-  adds an extra elbow beyond the default pair, or removes a bend.
+- **Shapeable arrows** — drag a curved arrow's line to bend it; drag near
+  either corner of a right-angle (orthogonal) arrow to move that corner
+  independently of the other. Double-click adds an extra elbow beyond the
+  default pair, or removes a bend. Select an arrow and drag either end to
+  reconnect it to a different point on the same or a different box.
 - **Play the request flow** — animates a dot along each arrow in numbered
   order, pulsing the active nodes. Pause / Reset / Speed controls included.
 - **Rich text labels** — the freeform Text tool supports Heading 1-3,

@@ -100,6 +100,15 @@ exports).
     border point is closest to the other node's center (`clipPointOnRect`).
     Anchors are node-relative fractions, so they track a node through
     move/resize with no extra bookkeeping.
+  - **Reconnecting an endpoint** (canvas.js): a selected edge renders a small
+    `.edge-endpoint-handle` circle at `geo.start`/`geo.end` (in `renderEdge`).
+    Dragging one reuses the same temp-line + drop-on-a-node flow as drawing a
+    brand new connection (`startEndpointDrag`/`onEndpointDragMove`/
+    `onEndpointDragUp`, `findNodeAtPoint`) except it retargets this edge's
+    existing `from`/`to` and re-derives `fromAnchor`/`toAnchor` from the exact
+    drop point instead of creating a new edge. The *other* end's node is
+    excluded as a drop target so you can't collapse an edge onto itself;
+    dropping on empty space or an invalid target leaves the edge unchanged.
   - **Curved routing** (`edge.routing` unset): exactly **one** bend point —
     `edge.curve`, a signed perpendicular offset from the straight-line
     midpoint. Dragging the line sets it (`computeBendFromPoint`);
@@ -112,9 +121,16 @@ exports).
     - **Default** (no `edge.waypoints`): the classic auto two-corner "Z" (or
       straight/"L" when rows or columns already align) — `computeOrthogonalDefault`,
       built on `orthogonalDefaultBase` (shared with canvas.js's elbow-drag so
-      both compute the exact same base position). The *only* adjustable
-      value is `edge.elbowOffset`, which slides the middle segment —
-      dragging the line **moves** it, it never creates a new bend.
+      both compute the exact same base position). Each corner is
+      independently adjustable — `edge.elbowOffset` near the start,
+      `edge.elbowOffsetEnd` near the end (`computeOrthogonalCornerBases`
+      gives canvas.js both corners' live positions so a pointerdown can pick
+      whichever one it landed nearest to — `startElbowDrag` in canvas.js).
+      When the two offsets are equal it's the classic single-jog Z; when they
+      differ, one extra connecting jog (at the start/end midpoint on the
+      cross axis) keeps the route fully orthogonal. Dragging only **moves**
+      an existing corner, it never creates a new one — that still requires
+      the double-click escape hatch below.
     - **Waypointed** (`edge.waypoints` non-empty): an explicit, deliberate
       escape hatch — reached only via double-click, never a plain drag — for
       routes that need more than the default pair of corners.
@@ -126,7 +142,9 @@ exports).
   - **`points` vs `refs`**: `points` is the *fully rendered* polyline (used
     for the `d` string) — for a waypointed orthogonal route this includes a
     synthetic corner per hop that isn't a real waypoint, and for the default
-    Z it's 4 points that aren't editable at all. `refs` is the real editable
+    Z it's 4 (or 6, once the two corners diverge) points that aren't editable
+    via `edge.waypoints` at all — they come from `elbowOffset`/
+    `elbowOffsetEnd` instead. `refs` is the real editable
     point list (`[start, end]` for a curve or a default-mode Z — i.e.
     nothing draggable in between; `[start, ...waypoints, end]` once
     waypointed) with those synthetic points stripped out. canvas.js's

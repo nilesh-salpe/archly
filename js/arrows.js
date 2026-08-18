@@ -8,11 +8,13 @@
 // offset from the straight-line midpoint) — draw.io-style: drag anywhere on
 // the line to set it, no more. Orthogonal edges default to the classic
 // two-corner "Z" (or straight/"L" when rows or columns already align), with
-// one adjustable value (`edge.elbowOffset`) sliding the middle segment —
-// dragging the line *moves* that segment, it doesn't create new bends. An
-// explicit, deliberate action (double-click — see canvas.js) can add real
-// extra bend points (`edge.waypoints`) beyond that pair for edges that
-// genuinely need to route around something; once any exist, the route
+// each corner independently adjustable (`edge.elbowOffset` near the start,
+// `edge.elbowOffsetEnd` near the end) — dragging near either corner *moves*
+// that corner only; when they diverge, one extra connecting jog keeps the
+// route orthogonal. Dragging never creates a brand-new bend beyond that
+// pair. An explicit, deliberate action (double-click — see canvas.js) can
+// add real extra bend points (`edge.waypoints`) beyond that pair for edges
+// that genuinely need to route around something; once any exist, the route
 // passes through all of them in order instead of using the default Z.
 // (An earlier version let every drag add a new curve/waypoint; useful in
 // isolation, but a diagram builds up bends fast and unpredictably compared
@@ -104,24 +106,48 @@ function orthogonalDefaultBase(edge, s, t) {
   return { horiz, start, end, mid: horiz ? (start.x + end.x) / 2 : (start.y + end.y) / 2 };
 }
 
+// The default "Z" has two corners, each independently draggable
+// (edge.elbowOffset near the start, edge.elbowOffsetEnd near the end) —
+// dragging one moves only that corner, matching how the rest of the app's
+// bend gestures work (a drag moves an existing point, never adds one).
+// When both corners land on the same coordinate it's the classic single-jog
+// Z; when they differ, one extra connecting jog (at the start/end midpoint
+// on the cross axis) keeps the route fully orthogonal — the same shape a
+// waypoint would produce, just derived from two numbers instead of an
+// explicit point list.
 function computeOrthogonalDefault(edge, s, t) {
   const { horiz, start, end, mid } = orthogonalDefaultBase(edge, s, t);
-  const m = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : 0);
-  if (horiz) return [start, { x: m, y: start.y }, { x: m, y: end.y }, end];
-  return [start, { x: start.x, y: m }, { x: end.x, y: m }, end];
+  const m1 = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : 0);
+  const m2 = mid + (typeof edge.elbowOffsetEnd === 'number' ? edge.elbowOffsetEnd : 0);
+  if (m1 === m2) {
+    if (horiz) return [start, { x: m1, y: start.y }, { x: m1, y: end.y }, end];
+    return [start, { x: start.x, y: m1 }, { x: end.x, y: m1 }, end];
+  }
+  if (horiz) {
+    const cross = (start.y + end.y) / 2;
+    return [start, { x: m1, y: start.y }, { x: m1, y: cross }, { x: m2, y: cross }, { x: m2, y: end.y }, end];
+  }
+  const cross = (start.x + end.x) / 2;
+  return [start, { x: start.x, y: m1 }, { x: cross, y: m1 }, { x: cross, y: m2 }, { x: end.x, y: m2 }, end];
 }
 
 // canvas.js calls this to turn a drag position directly into a new
-// edge.elbowOffset (absolute, not incremental) — {axis, base} says which
-// screen coordinate to read off the cursor and what to subtract from it.
-function computeOrthogonalElbowBase(edge, allNodes) {
+// edge.elbowOffset/elbowOffsetEnd (absolute, not incremental) — {axis, base}
+// says which screen coordinate to read off the cursor and what to subtract
+// from it; c1/c2 are the two corners' current positions, so canvas.js can
+// tell which one a pointerdown landed nearest to.
+function computeOrthogonalCornerBases(edge, allNodes) {
   const nodesById = {};
   for (const n of allNodes) nodesById[n.id] = n;
   const s = nodesById[edge.from];
   const t = nodesById[edge.to];
   if (!s || !t) return null;
-  const { horiz, mid } = orthogonalDefaultBase(edge, s, t);
-  return { axis: horiz ? 'x' : 'y', base: mid };
+  const { horiz, start, end, mid } = orthogonalDefaultBase(edge, s, t);
+  const m1 = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : 0);
+  const m2 = mid + (typeof edge.elbowOffsetEnd === 'number' ? edge.elbowOffsetEnd : 0);
+  const c1 = horiz ? { x: m1, y: start.y } : { x: start.x, y: m1 };
+  const c2 = horiz ? { x: m2, y: end.y } : { x: end.x, y: m2 };
+  return { axis: horiz ? 'x' : 'y', base: mid, c1, c2 };
 }
 
 // Clips an axis-aligned segment (p0 -> p1, where p0 is inside/at the rect)
@@ -210,13 +236,15 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     if (!points) return null;
     const d = `M ${points.map((p) => `${p.x} ${p.y}`).join(' L ')}`;
     const waypointed = Array.isArray(edge.waypoints) && edge.waypoints.length > 0;
-    // The default two-corner Z always has exactly 4 points; matching the
-    // original single-elbow badge placement (midpoint between the corners)
-    // keeps it stable under the elbow drag. A waypointed route can be any
-    // length, so its badge sits at the route's midpoint by arc length.
-    const badge = waypointed
-      ? pointAtPolylineFraction(points, 0.5)
-      : { x: (points[1].x + points[2].x) / 2, y: (points[1].y + points[2].y) / 2 };
+    // The default two-corner Z (both elbow offsets equal) always has exactly
+    // 4 points; matching the original single-elbow badge placement (midpoint
+    // between the corners) keeps it stable under the elbow drag. Once the two
+    // corners diverge (independent per-end offsets) or the route is
+    // waypointed, the point count varies, so the badge sits at the route's
+    // midpoint by arc length instead.
+    const badge = !waypointed && points.length === 4
+      ? { x: (points[1].x + points[2].x) / 2, y: (points[1].y + points[2].y) / 2 }
+      : pointAtPolylineFraction(points, 0.5);
     const labelPos = { x: badge.x, y: badge.y - 20 };
     // `refs` is the real editable point list — [start, ...waypoints, end] —
     // with the jog algorithm's synthetic corners stripped out, since those

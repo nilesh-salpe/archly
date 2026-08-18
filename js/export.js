@@ -254,6 +254,7 @@ function diagramToYAMLObject() {
       if (e.fromAnchor) obj.fromAnchor = e.fromAnchor;
       if (e.toAnchor) obj.toAnchor = e.toAnchor;
       if (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) obj.elbowOffset = Math.round(e.elbowOffset);
+      if (typeof e.elbowOffsetEnd === 'number' && e.elbowOffsetEnd !== 0) obj.elbowOffsetEnd = Math.round(e.elbowOffsetEnd);
       if (Array.isArray(e.waypoints) && e.waypoints.length) {
         obj.waypoints = e.waypoints.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
       }
@@ -330,6 +331,7 @@ function importYAMLFile(file) {
         fromAnchor: e.fromAnchor || undefined,
         toAnchor: e.toAnchor || undefined,
         elbowOffset: typeof e.elbowOffset === 'number' ? e.elbowOffset : undefined,
+        elbowOffsetEnd: typeof e.elbowOffsetEnd === 'number' ? e.elbowOffsetEnd : undefined,
         waypoints: Array.isArray(e.waypoints) ? e.waypoints : undefined,
       }));
 

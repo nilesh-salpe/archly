@@ -970,6 +970,16 @@ function renderEdge(e) {
 
   g.appendChild(path);
   g.appendChild(hit);
+
+  if (state.selected && state.selected.kind === 'edge' && state.selected.id === e.id) {
+    const fromHandle = el('circle', { class: 'edge-endpoint-handle', cx: geo.start.x, cy: geo.start.y, r: 6 });
+    const toHandle = el('circle', { class: 'edge-endpoint-handle', cx: geo.end.x, cy: geo.end.y, r: 6 });
+    fromHandle.addEventListener('pointerdown', (ev) => startEndpointDrag(ev, e, 'from'));
+    toHandle.addEventListener('pointerdown', (ev) => startEndpointDrag(ev, e, 'to'));
+    g.appendChild(fromHandle);
+    g.appendChild(toHandle);
+  }
+
   g.appendChild(badge);
 
   if (e.protocol) {
@@ -1352,6 +1362,59 @@ function findNodeAtPoint(clientX, clientY, excludeId) {
   return null;
 }
 
+// ---------- Edge endpoint reconnect ----------
+// Selected edges show a small handle at each end (renderEdge below); dragging
+// one reuses the same temp-line + drop-on-a-node flow as drawing a brand new
+// connection, except it retargets this edge's existing from/to instead of
+// creating a new edge. The *other* end's node is excluded as a drop target so
+// you can't collapse an edge onto itself.
+
+let endpointDragCtx = null;
+
+function startEndpointDrag(ev, edge, which) {
+  ev.stopPropagation();
+  ev.preventDefault();
+  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+  if (!geo) return;
+  const fixed = which === 'from' ? geo.end : geo.start;
+  const line = el('path', { class: 'temp-line', d: `M ${fixed.x} ${fixed.y} L ${fixed.x} ${fixed.y}` });
+  layerOverlay.appendChild(line);
+  const fixedNodeId = which === 'from' ? edge.to : edge.from;
+  endpointDragCtx = { edge, which, line, fixed, fixedNodeId };
+  window.addEventListener('pointermove', onEndpointDragMove);
+  window.addEventListener('pointerup', onEndpointDragUp);
+}
+
+function onEndpointDragMove(ev) {
+  if (!endpointDragCtx) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  endpointDragCtx.line.setAttribute('d', `M ${endpointDragCtx.fixed.x} ${endpointDragCtx.fixed.y} L ${p.x} ${p.y}`);
+}
+
+function onEndpointDragUp(ev) {
+  if (!endpointDragCtx) return;
+  window.removeEventListener('pointermove', onEndpointDragMove);
+  window.removeEventListener('pointerup', onEndpointDragUp);
+  const { edge, which, line, fixedNodeId } = endpointDragCtx;
+  line.remove();
+  endpointDragCtx = null;
+
+  const target = findNodeAtPoint(ev.clientX, ev.clientY, fixedNodeId);
+  if (target) {
+    const p = toSVGCoords(ev.clientX, ev.clientY);
+    const anchor = target.textOnly || target.container ? undefined : borderAnchorFromLocal(target, p.x - target.x, p.y - target.y);
+    if (which === 'from') {
+      edge.from = target.id;
+      edge.fromAnchor = anchor;
+    } else {
+      edge.to = target.id;
+      edge.toAnchor = anchor;
+    }
+    saveState();
+  }
+  renderAll();
+}
+
 // ---------- Edge bending ----------
 // Three separate, predictable interactions instead of one "drag anywhere
 // adds a point" gesture — that felt uncontrollable (every touch added
@@ -1360,8 +1423,10 @@ function findNodeAtPoint(clientX, clientY, excludeId) {
 // - Curve (no routing set): exactly one bend point. Drag anywhere on the
 //   line to set/move it (edge.curve); double-click removes it.
 // - Orthogonal, no explicit waypoints: the classic auto two-corner "Z" (or
-//   straight/"L" when rows or columns align). Drag *moves* the middle
-//   segment (edge.elbowOffset) — this never creates a new bend.
+//   straight/"L" when rows or columns align), with each corner independently
+//   draggable (edge.elbowOffset near the start, edge.elbowOffsetEnd near the
+//   end, picked by proximity) — this only *moves* an existing corner, it
+//   never creates a new bend.
 // - Orthogonal, with waypoints: an explicit, deliberate escape hatch for
 //   routes that need more than the default two corners. You only get here
 //   via double-click (never a plain drag); once there, dragging moves an
@@ -1412,14 +1477,23 @@ function onCurveDragUp() {
   curveDragCtx = null;
 }
 
-// ---- Orthogonal default: slide the one middle segment ----
+// ---- Orthogonal default: two independent corners ----
+// Grabbing near the start-side corner moves only edge.elbowOffset; grabbing
+// near the end-side corner moves only edge.elbowOffsetEnd. Which one a
+// pointerdown targets is decided once, up front, by proximity — not
+// re-evaluated during the drag — so a fast drag past the other corner can't
+// flip which field is being edited mid-gesture.
 
 let elbowDragCtx = null;
 
 function startElbowDrag(ev, edge) {
-  const base = computeOrthogonalElbowBase(edge, state.nodes);
-  if (!base) return;
-  elbowDragCtx = { edge, base, startClient: { x: ev.clientX, y: ev.clientY }, moved: false };
+  const info = computeOrthogonalCornerBases(edge, state.nodes);
+  if (!info) return;
+  const p0 = toSVGCoords(ev.clientX, ev.clientY);
+  const d1 = Math.hypot(p0.x - info.c1.x, p0.y - info.c1.y);
+  const d2 = Math.hypot(p0.x - info.c2.x, p0.y - info.c2.y);
+  const field = d1 <= d2 ? 'elbowOffset' : 'elbowOffsetEnd';
+  elbowDragCtx = { edge, axis: info.axis, base: info.base, field, startClient: { x: ev.clientX, y: ev.clientY }, moved: false };
   window.addEventListener('pointermove', onElbowDragMove);
   window.addEventListener('pointerup', onElbowDragUp);
 }
@@ -1431,8 +1505,7 @@ function onElbowDragMove(ev) {
   if (!elbowDragCtx.moved && Math.hypot(dx, dy) > 4) elbowDragCtx.moved = true;
   if (!elbowDragCtx.moved) return;
   const p = toSVGCoords(ev.clientX, ev.clientY);
-  const { axis, base } = elbowDragCtx.base;
-  elbowDragCtx.edge.elbowOffset = (axis === 'x' ? p.x : p.y) - base;
+  elbowDragCtx.edge[elbowDragCtx.field] = (elbowDragCtx.axis === 'x' ? p.x : p.y) - elbowDragCtx.base;
   renderAll();
 }
 
@@ -1860,12 +1933,14 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       saveState();
     },
   });
-  if (e.curve || (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) || (e.waypoints && e.waypoints.length)) {
+  const hasElbowOffset = (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) || (typeof e.elbowOffsetEnd === 'number' && e.elbowOffsetEnd !== 0);
+  if (e.curve || hasElbowOffset || (e.waypoints && e.waypoints.length)) {
     items.push({
       label: '   Straighten (clear bend points)',
       action: () => {
         e.curve = undefined;
         e.elbowOffset = undefined;
+        e.elbowOffsetEnd = undefined;
         e.waypoints = undefined;
         renderAll();
         saveState();
