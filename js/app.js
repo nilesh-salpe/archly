@@ -325,7 +325,7 @@ function wireToolbar() {
     }
     if (state.selected && state.selected.kind === 'node') {
       const node = nodeById(state.selected.id);
-      if (node) showContextMenu(x, y, buildNodeMenuItems(node));
+      if (node) showContextMenu(x, y, buildNodeMenuItems(node, x, y));
       return;
     }
     if (state.selected && state.selected.kind === 'edge') {

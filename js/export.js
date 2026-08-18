@@ -226,15 +226,20 @@ function exportPNGFile() {
 
 function diagramToYAMLObject() {
   return {
-    nodes: state.nodes.map((n) => ({
-      id: n.id,
-      type: n.type,
-      label: n.label,
-      x: Math.round(n.x),
-      y: Math.round(n.y),
-      w: Math.round(n.w),
-      h: Math.round(n.h),
-    })),
+    nodes: state.nodes.map((n) => {
+      const obj = {
+        id: n.id,
+        type: n.type,
+        label: n.label,
+        x: Math.round(n.x),
+        y: Math.round(n.y),
+        w: Math.round(n.w),
+        h: Math.round(n.h),
+      };
+      if (typeof n.latencyMs === 'number') obj.latencyMs = n.latencyMs;
+      if (typeof n.costPerHour === 'number') obj.costPerHour = n.costPerHour;
+      return obj;
+    }),
     edges: state.edges.map((e) => {
       const obj = { from: e.from, to: e.to, number: e.number };
       if (e.lineStyle && e.lineStyle !== 'solid') obj.lineStyle = e.lineStyle;
@@ -294,6 +299,8 @@ function importYAMLFile(file) {
         y: spec.y || 0,
         w,
         h,
+        latencyMs: typeof spec.latencyMs === 'number' ? spec.latencyMs : undefined,
+        costPerHour: typeof spec.costPerHour === 'number' ? spec.costPerHour : undefined,
       };
       idMap[spec.id] = nid;
       nodes.push(node);

@@ -693,6 +693,55 @@ function openProtocolEditor(edge, clientX, clientY) {
   input.addEventListener('blur', commit);
 }
 
+// Shared by openLatencyEditor/openCostEditor below: a numeric override with
+// the node's *current effective value* (override or category default,
+// from js/simulate.js) prefilled, so nudging it is easy — clearing the
+// field back to empty deletes the override and reverts to the default.
+function openNodeSimEditor(node, field, clientX, clientY, currentValue) {
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.step = 'any';
+  input.className = 'name-editor';
+  input.value = String(currentValue);
+  input.style.left = `${clientX - 40}px`;
+  input.style.top = `${clientY - 11}px`;
+  input.style.width = '90px';
+  document.body.appendChild(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    const raw = input.value.trim();
+    const v = raw === '' ? NaN : parseFloat(raw);
+    node[field] = Number.isFinite(v) ? v : undefined; // empty/invalid clears the override
+    input.remove();
+    renderAll();
+    saveState();
+  };
+  const cancel = () => {
+    if (done) return;
+    done = true;
+    input.remove();
+  };
+
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') commit();
+    if (ev.key === 'Escape') cancel();
+  });
+  input.addEventListener('blur', commit);
+}
+
+function openLatencyEditor(node, clientX, clientY) {
+  openNodeSimEditor(node, 'latencyMs', clientX, clientY, nodeLatencyMs(node));
+}
+
+function openCostEditor(node, clientX, clientY) {
+  openNodeSimEditor(node, 'costPerHour', clientX, clientY, nodeCostPerHour(node));
+}
+
 // A node's whole border (not just fixed handle points) is a connector — drag
 // from within CONNECT_BORDER_ZONE of the edge to draw a flow arrow starting
 // from that exact spot; drag from the interior to move the node instead.
@@ -1520,17 +1569,30 @@ function showContextMenu(clientX, clientY, items) {
   menu.style.top = `${top}px`;
 }
 
-function buildNodeMenuItems(n) {
-  return [
+function buildNodeMenuItems(n, menuX, menuY) {
+  const items = [
     { label: 'Rename', action: () => openRename(n) },
     { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
     { label: 'Copy    ⌘C', action: () => copySelectedNode() },
-    '-',
-    { label: 'Bring to Front    ]', action: () => bringToFront(n.id) },
-    { label: 'Send to Back    [', action: () => sendToBack(n.id) },
-    '-',
-    { label: 'Delete', action: () => deleteSelected() },
   ];
+  if (!n.container && !n.textOnly) {
+    items.push('-');
+    items.push({ label: 'Simulation', heading: true });
+    items.push({
+      label: `   Latency: ${formatLatency(nodeLatencyMs(n))}${typeof n.latencyMs === 'number' ? '' : ' (default)'}`,
+      action: () => openLatencyEditor(n, menuX, menuY),
+    });
+    items.push({
+      label: `   Cost: ${formatCost(nodeCostPerHour(n))}${typeof n.costPerHour === 'number' ? '' : ' (default)'}`,
+      action: () => openCostEditor(n, menuX, menuY),
+    });
+  }
+  items.push('-');
+  items.push({ label: 'Bring to Front    ]', action: () => bringToFront(n.id) });
+  items.push({ label: 'Send to Back    [', action: () => sendToBack(n.id) });
+  items.push('-');
+  items.push({ label: 'Delete', action: () => deleteSelected() });
+  return items;
 }
 
 function buildMultiSelectMenuItems() {
@@ -1569,7 +1631,7 @@ function onNodeContextMenu(ev, n) {
     return;
   }
   selectItem('node', n.id);
-  showContextMenu(ev.clientX, ev.clientY, buildNodeMenuItems(n));
+  showContextMenu(ev.clientX, ev.clientY, buildNodeMenuItems(n, ev.clientX, ev.clientY));
 }
 
 const LINE_STYLE_OPTIONS = [

@@ -176,17 +176,22 @@ exports).
   come from `CATEGORY_DEFAULT_LATENCY_MS`/`CATEGORY_DEFAULT_COST_PER_HOUR`
   (components.js, per-category — not per-component-type, to keep ~90
   components maintainable) unless a node has its own `latencyMs`/
-  `costPerHour` (no editor UI for that yet, only settable by hand-editing
-  the diagram — first, deliberately simple pass). `computeE2ELatencyMs()`
-  reuses `getStepGroups()` (animate.js) — the exact same grouping Play
-  uses — so sequential numbered steps add and concurrent (same-numbered)
-  steps take the max of their branches, matching what watching Play would
-  show you. Edges styled with no arrowhead (`arrowStyle: 'none'`, the
-  fire-and-forget convention several patterns use for metrics/logging side
-  edges) are excluded as non-blocking. `computeTotalCostPerHour()` sums
-  every non-container, non-text node's cost — independent of the flow,
-  since cost is "what's running," not "what's used per request." No RPS/
-  load or chaos-failure simulation yet — planned as later, separate passes.
+  `costPerHour` override — right-click a node → Simulation →
+  "Latency: …"/"Cost: …" (`openLatencyEditor`/`openCostEditor` in
+  canvas.js, same floating-`<input>` pattern as `openProtocolEditor`;
+  clearing the field deletes the override, reverting to the category
+  default). Overrides round-trip through YAML export/import and pattern
+  files (`latencyMs`/`costPerHour` fields, both optional).
+  `computeE2ELatencyMs()` reuses `getStepGroups()` (animate.js) — the exact
+  same grouping Play uses — so sequential numbered steps add and concurrent
+  (same-numbered) steps take the max of their branches, matching what
+  watching Play would show you. Edges styled with no arrowhead
+  (`arrowStyle: 'none'`, the fire-and-forget convention several patterns
+  use for metrics/logging side edges) are excluded as non-blocking.
+  `computeTotalCostPerHour()` sums every non-container, non-text node's
+  cost — independent of the flow, since cost is "what's running," not
+  "what's used per request." No RPS/load or chaos-failure simulation yet —
+  planned as later, separate passes.
 
 - Node label: click the label text to rename inline (single-line `<input>`,
   or a `<textarea>` for the textOnly "Text" tool). Body/icon drag to move.
