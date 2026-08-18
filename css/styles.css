@@ -442,20 +442,6 @@ html, body {
   font-weight: 600;
 }
 
-.handle {
-  fill: var(--accent);
-  opacity: 0;
-  cursor: crosshair;
-  transition: opacity 0.12s ease;
-}
-
-.node:hover .handle,
-.node.connecting .handle {
-  opacity: 0.9;
-}
-
-.handle:hover { r: 6; }
-
 .edge-path {
   /* marker-start / marker-end / stroke-dasharray are set inline per edge in
      canvas.js (applyEdgeStyle), since they vary per edge (arrowhead + line

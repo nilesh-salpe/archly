@@ -602,11 +602,9 @@ function renderRegularNode(n) {
   g.appendChild(label);
   g.appendChild(labelHit);
 
-  for (const dir of ['n', 'e', 's', 'w']) {
-    g.appendChild(makeHandle(n, dir));
-  }
-
-  body.addEventListener('pointerdown', (ev) => startDragNode(ev, n));
+  body.addEventListener('pointerdown', (ev) => startDragOrConnect(ev, n));
+  body.addEventListener('pointermove', (ev) => updateBorderCursor(ev, n, body));
+  body.addEventListener('pointerleave', () => { body.style.cursor = ''; });
   labelHit.addEventListener('click', (ev) => {
     ev.stopPropagation();
     openRename(n);
@@ -692,20 +690,49 @@ function openProtocolEditor(edge, clientX, clientY) {
   input.addEventListener('blur', commit);
 }
 
-function handlePos(n, dir) {
-  switch (dir) {
-    case 'n': return { x: n.w / 2, y: 0 };
-    case 's': return { x: n.w / 2, y: n.h };
-    case 'e': return { x: n.w, y: n.h / 2 };
-    case 'w': return { x: 0, y: n.h / 2 };
-  }
+// A node's whole border (not just fixed handle points) is a connector — drag
+// from within CONNECT_BORDER_ZONE of the edge to draw a flow arrow starting
+// from that exact spot; drag from the interior to move the node instead.
+const CONNECT_BORDER_ZONE = 10;
+
+function clamp01(v) {
+  return Math.max(0, Math.min(1, v));
 }
 
-function makeHandle(n, dir) {
-  const p = handlePos(n, dir);
-  const h = el('circle', { class: 'handle', cx: p.x, cy: p.y, r: 4.5, 'data-dir': dir });
-  h.addEventListener('pointerdown', (ev) => startConnect(ev, n));
-  return h;
+// Nearest border side to a point given as local (node-relative) coordinates,
+// expressed as {side, t} — t is the 0..1 fraction along that side — so the
+// anchor scales proportionally if the node is later resized.
+function borderAnchorFromLocal(n, localX, localY) {
+  const distN = localY, distS = n.h - localY, distW = localX, distE = n.w - localX;
+  const min = Math.min(distN, distS, distW, distE);
+  if (min === distW) return { side: 'w', t: clamp01(localY / n.h) };
+  if (min === distE) return { side: 'e', t: clamp01(localY / n.h) };
+  if (min === distN) return { side: 'n', t: clamp01(localX / n.w) };
+  return { side: 's', t: clamp01(localX / n.w) };
+}
+
+function isNearBorder(n, localX, localY) {
+  return localX <= CONNECT_BORDER_ZONE || localX >= n.w - CONNECT_BORDER_ZONE || localY <= CONNECT_BORDER_ZONE || localY >= n.h - CONNECT_BORDER_ZONE;
+}
+
+function updateBorderCursor(ev, n, body) {
+  if (dragCtx || connectCtx || n.textOnly) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  body.style.cursor = isNearBorder(n, p.x - n.x, p.y - n.y) ? 'crosshair' : 'grab';
+}
+
+function startDragOrConnect(ev, n) {
+  if (n.textOnly || ev.shiftKey) {
+    startDragNode(ev, n);
+    return;
+  }
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  const localX = p.x - n.x, localY = p.y - n.y;
+  if (isNearBorder(n, localX, localY)) {
+    startConnect(ev, n, borderAnchorFromLocal(n, localX, localY));
+  } else {
+    startDragNode(ev, n);
+  }
 }
 
 function textNode(str) {
@@ -735,6 +762,7 @@ function renderEdge(e) {
   badge.appendChild(numText);
 
   hit.addEventListener('pointerdown', (ev) => startEdgeBend(ev, e));
+  hit.addEventListener('dblclick', (ev) => removeNearestEdgePoint(ev, e));
   hit.addEventListener('contextmenu', (ev) => onEdgeContextMenu(ev, e));
   badge.addEventListener('click', (ev) => {
     ev.stopPropagation();
@@ -1067,13 +1095,13 @@ function onResizeUp() {
 
 let connectCtx = null;
 
-function startConnect(ev, sourceNode) {
+function startConnect(ev, sourceNode, fromAnchor) {
   ev.stopPropagation();
   ev.preventDefault();
   const start = toSVGCoords(ev.clientX, ev.clientY);
   const line = el('path', { class: 'temp-line', d: `M ${start.x} ${start.y} L ${start.x} ${start.y}` });
   layerOverlay.appendChild(line);
-  connectCtx = { sourceNode, line, start };
+  connectCtx = { sourceNode, line, start, fromAnchor };
   window.addEventListener('pointermove', onConnectMove);
   window.addEventListener('pointerup', onConnectUp);
 }
@@ -1092,6 +1120,8 @@ function onConnectUp(ev) {
 
   const target = findNodeAtPoint(ev.clientX, ev.clientY, connectCtx.sourceNode.id);
   if (target) {
+    const p = toSVGCoords(ev.clientX, ev.clientY);
+    const toAnchor = target.textOnly || target.container ? undefined : borderAnchorFromLocal(target, p.x - target.x, p.y - target.y);
     const edge = {
       id: state.nextEdgeId++,
       from: connectCtx.sourceNode.id,
@@ -1099,6 +1129,8 @@ function onConnectUp(ev) {
       number: nextEdgeNumber(),
       lineStyle: 'solid',
       arrowStyle: 'end',
+      fromAnchor: connectCtx.fromAnchor,
+      toAnchor,
     };
     state.edges.push(edge);
     renderAll();
@@ -1121,21 +1153,36 @@ function findNodeAtPoint(clientX, clientY, excludeId) {
   return null;
 }
 
-// ---------- Edge bending (drag anywhere along the line to curve it) ----------
-// Grabbing the edge's hit-path and moving the pointer bends the curve so its
-// control point tracks the cursor (draw.io-style — no separate fixed handle).
-// A short drag threshold tells a genuine bend apart from a plain click, which
-// still selects the edge as before.
+// ---------- Edge bending (drag anywhere along the line to add/move a bend
+// point, double-click a bend point to remove it) ----------
+// Works the same way for curved (`curvePoints`) and orthogonal (`waypoints`)
+// edges — only which array gets edited differs. Dragging near an existing
+// point moves it; dragging elsewhere on the line inserts a new one at that
+// spot. A short drag threshold tells a genuine bend apart from a plain
+// click, which still just selects the edge.
 
+const EDGE_POINT_GRAB_RADIUS = 10;
 let edgeBendCtx = null;
+
+function edgePointsKey(edge) {
+  return edge.routing === 'orthogonal' ? 'waypoints' : 'curvePoints';
+}
 
 function startEdgeBend(ev, edge) {
   ev.stopPropagation();
-  if (edge.routing === 'orthogonal') {
-    selectItem('edge', edge.id); // orthogonal edges auto-route — nothing to drag
-    return;
-  }
-  edgeBendCtx = { edge, startClient: { x: ev.clientX, y: ev.clientY }, moved: false };
+  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+  if (!geo) return;
+  const mid = geo.refs.slice(1, -1);
+  const p0 = toSVGCoords(ev.clientX, ev.clientY);
+  const { index, dist } = nearestPointIndex(mid, p0);
+  edgeBendCtx = {
+    edge,
+    key: edgePointsKey(edge),
+    startClient: { x: ev.clientX, y: ev.clientY },
+    moved: false,
+    fullPointsAtStart: geo.refs,
+    grabIndex: dist < EDGE_POINT_GRAB_RADIUS ? index : -1, // -1 = insert a new point on first real move
+  };
   window.addEventListener('pointermove', onEdgeBendMove);
   window.addEventListener('pointerup', onEdgeBendUp);
 }
@@ -1144,10 +1191,26 @@ function onEdgeBendMove(ev) {
   if (!edgeBendCtx) return;
   const dx = ev.clientX - edgeBendCtx.startClient.x;
   const dy = ev.clientY - edgeBendCtx.startClient.y;
-  if (!edgeBendCtx.moved && Math.hypot(dx, dy) > 4) edgeBendCtx.moved = true;
+  if (!edgeBendCtx.moved && Math.hypot(dx, dy) > 4) {
+    edgeBendCtx.moved = true;
+    const { edge, key } = edgeBendCtx;
+    // Materialize the *currently rendered* mid-points into the array we're
+    // about to edit — this is what lazily migrates a legacy single-offset
+    // `curve` (or an auto-separated parallel edge) into a real curvePoints
+    // array the moment it's re-dragged, with no visual jump.
+    edge[key] = edgeBendCtx.fullPointsAtStart.slice(1, -1).map((pt) => ({ x: pt.x, y: pt.y }));
+    if (key === 'curvePoints') edge.curve = undefined;
+
+    if (edgeBendCtx.grabIndex === -1) {
+      const p = toSVGCoords(ev.clientX, ev.clientY);
+      const { index } = nearestSegmentIndex(edgeBendCtx.fullPointsAtStart, p);
+      edge[key].splice(index, 0, { x: p.x, y: p.y });
+      edgeBendCtx.grabIndex = index;
+    }
+  }
   if (!edgeBendCtx.moved) return;
   const p = toSVGCoords(ev.clientX, ev.clientY);
-  edgeBendCtx.edge.curve = computeBendFromPoint(edgeBendCtx.edge, state.nodes, p);
+  edgeBendCtx.edge[edgeBendCtx.key][edgeBendCtx.grabIndex] = { x: p.x, y: p.y };
   renderAll();
 }
 
@@ -1161,6 +1224,28 @@ function onEdgeBendUp() {
     selectItem('edge', edgeBendCtx.edge.id); // no drag happened — treat as a plain click
   }
   edgeBendCtx = null;
+}
+
+function removeNearestEdgePoint(ev, edge) {
+  ev.stopPropagation();
+  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+  if (!geo) return;
+  const mid = geo.refs.slice(1, -1);
+  if (!mid.length) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  const { index, dist } = nearestPointIndex(mid, p);
+  if (index < 0 || dist >= EDGE_POINT_GRAB_RADIUS + 2) return;
+
+  const key = edgePointsKey(edge);
+  if (Array.isArray(edge[key]) && edge[key].length) {
+    edge[key].splice(index, 1);
+  } else if (key === 'curvePoints' && typeof edge.curve === 'number') {
+    edge.curve = undefined; // removing the one legacy bend point
+  } else {
+    return;
+  }
+  renderAll();
+  saveState();
 }
 
 // ---------- Selection & deletion ----------
@@ -1434,10 +1519,10 @@ function buildEdgeMenuItems(e, menuX, menuY) {
     });
   }
   items.push('-');
-  items.push({ label: 'Routing', heading: true });
+  items.push({ label: 'Routing (drag the line to add bend points)', heading: true });
   const isOrthogonal = e.routing === 'orthogonal';
   items.push({
-    label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved (drag the line to shape it)',
+    label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved',
     action: () => {
       e.routing = undefined;
       renderAll();
@@ -1449,10 +1534,23 @@ function buildEdgeMenuItems(e, menuX, menuY) {
     action: () => {
       e.routing = 'orthogonal';
       e.curve = undefined;
+      e.curvePoints = undefined;
       renderAll();
       saveState();
     },
   });
+  if (e.curve || (e.curvePoints && e.curvePoints.length) || (e.waypoints && e.waypoints.length)) {
+    items.push({
+      label: '   Straighten (clear bend points)',
+      action: () => {
+        e.curve = undefined;
+        e.curvePoints = undefined;
+        e.waypoints = undefined;
+        renderAll();
+        saveState();
+      },
+    });
+  }
   items.push('-');
   items.push({ label: 'Arrowhead', heading: true });
   for (const opt of ARROW_STYLE_OPTIONS) {

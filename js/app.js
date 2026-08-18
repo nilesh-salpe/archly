@@ -227,8 +227,9 @@ function buildHelpPanel() {
     <h4>Canvas</h4>
     <dl>
       <dt>drag</dt><dd>Move a node, or resize a container from its corner handle</dd>
-      <dt>drag a line</dt><dd>Bend an arrow — grab anywhere along its path</dd>
-      <dt>drag a dot</dt><dd>Draw a new numbered flow arrow to another node</dd>
+      <dt>drag near an edge</dt><dd>Draw a flow arrow from that exact point — any point on the border, not fixed dots</dd>
+      <dt>drag a line</dt><dd>Add a bend point at that spot — works for curved and orthogonal arrows, and for multiple points</dd>
+      <dt>double-click a bend point</dt><dd>Remove it</dd>
       <dt>shift-click</dt><dd>Add/remove a node from a multi-selection</dd>
       <dt>drag empty canvas</dt><dd>Rubber-band select multiple nodes</dd>
       <dt>right-click</dt><dd>Full menu for the node/arrow under the cursor</dd>
@@ -339,6 +340,7 @@ function wireToolbar() {
       { label: 'Export', heading: true },
       { label: '   PNG Image', action: exportPNGFile },
       { label: '   SVG Image', action: exportSVGFile },
+      { label: '   Animated SVG (plays the flow)', action: exportAnimatedSVGFile },
       { label: '   YAML', action: exportYAMLFile },
       '-',
       { label: 'Import YAML…', action: () => document.getElementById('import-yaml-input').click() },

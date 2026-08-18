@@ -12,13 +12,15 @@ function computeContentBBox() {
     maxX = Math.max(maxX, n.x + n.w);
     maxY = Math.max(maxY, n.y + n.h);
   }
-  // A curved edge's control point (where its number badge — and protocol
-  // label, if any — sits) can bulge outside the nodes' own bounding box, so
-  // widen the box to include those or they'd get clipped out of the export.
+  // A curved/orthogonal edge's bend points (where its number badge — and
+  // protocol label, if any — sits) can bulge outside the nodes' own bounding
+  // box, so widen the box to include every point on the route or they'd get
+  // clipped out of the export. This includes hand-dragged points that swing
+  // wide of both endpoints (a curve or orthogonal jog bent far out).
   for (const e of state.edges) {
     const geo = computeEdgeGeometry(e, state.edges, state.nodes);
     if (!geo) continue;
-    for (const p of [geo.badge, geo.labelPos]) {
+    for (const p of [geo.badge, geo.labelPos, ...geo.points]) {
       minX = Math.min(minX, p.x - 20);
       minY = Math.min(minY, p.y - 20);
       maxX = Math.max(maxX, p.x + 20);
@@ -105,6 +107,88 @@ function exportSVGFile() {
   downloadBlob(blob, 'architecture-diagram.svg');
 }
 
+// ---------- Animated SVG export ----------
+// A standalone SVG that plays the same request-flow animation as the Play
+// button, using native SMIL (<animate>/<animateMotion>) instead of the
+// live tool's requestAnimationFrame loop — so it plays on its own, with no
+// JS, in any browser tab it's opened in directly (SMIL is disabled when an
+// SVG is embedded via <img>, same as CSS animations would be). Plays once
+// through, same as Play does live; it doesn't loop.
+
+const FLOW_HIGHLIGHT_COLOR = '#f59e0b';
+const ANIM_STEP_GAP_MS = 250; // matches the live player's inter-step pause
+
+function smilEl(tag, attrs) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) node.setAttribute(k, attrs[k]);
+  return node;
+}
+
+function addStrokeFlashAnimation(target, beginSec, durSec) {
+  const base = target.getAttribute('stroke') || '#64748b';
+  target.appendChild(
+    smilEl('animate', {
+      attributeName: 'stroke',
+      values: `${base};${FLOW_HIGHLIGHT_COLOR};${base}`,
+      begin: `${beginSec}s`,
+      dur: `${durSec}s`,
+    })
+  );
+}
+
+function buildAnimatedExportSVG() {
+  const { svgEl, bbox } = buildExportSVG();
+  const groups = getStepGroups();
+  if (!groups.length) return { svgEl, bbox };
+
+  const speedMs = playState.speedMs;
+  const durSec = (speedMs / 1000).toFixed(3);
+  let elapsedMs = 0;
+
+  for (const group of groups) {
+    const beginSec = (elapsedMs / 1000).toFixed(3);
+    for (const edge of group.edges) {
+      const pathEl = svgEl.querySelector(`#edge-path-${edge.id}`);
+      if (!pathEl) continue;
+      if (!pathEl.id) pathEl.id = `edge-path-${edge.id}`;
+
+      addStrokeFlashAnimation(pathEl, beginSec, durSec);
+      for (const nodeId of [edge.from, edge.to]) {
+        const bodyEl = svgEl.querySelector(`[data-node-id="${nodeId}"] .node-body`);
+        if (bodyEl) addStrokeFlashAnimation(bodyEl, beginSec, durSec);
+      }
+
+      const dot = smilEl('circle', { r: 6, fill: FLOW_HIGHLIGHT_COLOR, stroke: '#ffffff', 'stroke-width': 1.5, opacity: 0 });
+      dot.appendChild(
+        smilEl('animate', {
+          attributeName: 'opacity',
+          values: '0;1;1;0',
+          keyTimes: '0;0.001;0.999;1',
+          begin: `${beginSec}s`,
+          dur: `${durSec}s`,
+          fill: 'freeze',
+        })
+      );
+      const motion = smilEl('animateMotion', { begin: `${beginSec}s`, dur: `${durSec}s`, fill: 'freeze' });
+      const mpath = smilEl('mpath', {});
+      mpath.setAttributeNS('http://www.w3.org/1999/xlink', 'href', `#${pathEl.id}`);
+      motion.appendChild(mpath);
+      dot.appendChild(motion);
+      svgEl.appendChild(dot);
+    }
+    elapsedMs += speedMs + ANIM_STEP_GAP_MS;
+  }
+
+  return { svgEl, bbox };
+}
+
+function exportAnimatedSVGFile() {
+  const { svgEl } = buildAnimatedExportSVG();
+  const xml = serializeSVG(svgEl);
+  const blob = new Blob([xml], { type: 'image/svg+xml' });
+  downloadBlob(blob, 'architecture-diagram-animated.svg');
+}
+
 function exportPNGFile() {
   const { svgEl, bbox } = buildExportSVG();
   const scale = 2; // export at 2x for crisper output
@@ -158,6 +242,14 @@ function diagramToYAMLObject() {
       if (e.protocol) obj.protocol = e.protocol;
       if (typeof e.curve === 'number' && e.curve !== 0) obj.curve = Math.round(e.curve);
       if (e.routing === 'orthogonal') obj.routing = 'orthogonal';
+      if (e.fromAnchor) obj.fromAnchor = e.fromAnchor;
+      if (e.toAnchor) obj.toAnchor = e.toAnchor;
+      if (Array.isArray(e.curvePoints) && e.curvePoints.length) {
+        obj.curvePoints = e.curvePoints.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+      }
+      if (Array.isArray(e.waypoints) && e.waypoints.length) {
+        obj.waypoints = e.waypoints.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+      }
       return obj;
     }),
   };
@@ -222,6 +314,10 @@ function importYAMLFile(file) {
         protocol: e.protocol || null,
         curve: typeof e.curve === 'number' ? e.curve : undefined,
         routing: e.routing === 'orthogonal' ? 'orthogonal' : undefined,
+        fromAnchor: e.fromAnchor || undefined,
+        toAnchor: e.toAnchor || undefined,
+        curvePoints: Array.isArray(e.curvePoints) ? e.curvePoints : undefined,
+        waypoints: Array.isArray(e.waypoints) ? e.waypoints : undefined,
       }));
 
     if (state.nodes.length && !confirm('Replace the current diagram with the imported one? This cannot be undone.')) return;
