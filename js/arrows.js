@@ -2,17 +2,21 @@
 // rectangle border, or — when a node end has an explicit `fromAnchor`/
 // `toAnchor` (see startConnect in canvas.js) — starts exactly at that fixed
 // border point instead of the dynamic "closest point to the other node's
-// center" default. Curvature comes from `edge.curvePoints`, an ordered list
-// of absolute control points a user drags into place (draw.io-style: drag
-// anywhere on the line to add a point, drag an existing point to move it,
-// double-click a point to remove it); a lone legacy `edge.curve` (a signed
-// perpendicular offset, pre-multi-point-editing) is still honored for
-// diagrams/patterns that only ever had one bend. `edge.waypoints` plays the
-// same role for `routing: 'orthogonal'` edges, except each hop between
-// consecutive points is forced into a right-angle jog rather than a smooth
-// curve. Either way, computeEdgeGeometry() also returns the full ordered
-// point list (`points`) so canvas.js's drag/insert/remove interaction can
-// hit-test against exactly what's on screen without recomputing it.
+// center" default.
+//
+// Curves get exactly one bend point (`edge.curve`, a signed perpendicular
+// offset from the straight-line midpoint) — draw.io-style: drag anywhere on
+// the line to set it, no more. Orthogonal edges default to the classic
+// two-corner "Z" (or straight/"L" when rows or columns already align), with
+// one adjustable value (`edge.elbowOffset`) sliding the middle segment —
+// dragging the line *moves* that segment, it doesn't create new bends. An
+// explicit, deliberate action (double-click — see canvas.js) can add real
+// extra bend points (`edge.waypoints`) beyond that pair for edges that
+// genuinely need to route around something; once any exist, the route
+// passes through all of them in order instead of using the default Z.
+// (An earlier version let every drag add a new curve/waypoint; useful in
+// isolation, but a diagram builds up bends fast and unpredictably compared
+// to how draw.io/Visio/Lucidchart behave, so it's gone.)
 
 function clipPointOnRect(cx, cy, tx, ty, rect) {
   const hw = rect.w / 2;
@@ -73,11 +77,57 @@ function edgeNormal(start, end) {
   return { nx: -dy / len, ny: dx / len };
 }
 
+// ---------- Orthogonal routing ----------
+
+// The border exit/entry points and the default (unshifted) middle-segment
+// position for the classic two-corner "Z" — shared by the actual path
+// builder below and by canvas.js's elbow-drag (which needs the same base
+// value to compute a new edge.elbowOffset from the cursor).
+function orthogonalDefaultBase(edge, s, t) {
+  const scx = s.x + s.w / 2, scy = s.y + s.h / 2;
+  const tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
+  const dx = tcx - scx, dy = tcy - scy;
+  const horiz = Math.abs(dx) >= Math.abs(dy);
+
+  let start, end;
+  if (horiz) {
+    const sx = dx >= 0 ? s.x + s.w : s.x;
+    const ex = dx >= 0 ? t.x : t.x + t.w;
+    start = edge.fromAnchor ? anchorAbsolutePoint(s, edge.fromAnchor) : { x: sx, y: scy };
+    end = edge.toAnchor ? anchorAbsolutePoint(t, edge.toAnchor) : { x: ex, y: tcy };
+  } else {
+    const sy = dy >= 0 ? s.y + s.h : s.y;
+    const ey = dy >= 0 ? t.y : t.y + t.h;
+    start = edge.fromAnchor ? anchorAbsolutePoint(s, edge.fromAnchor) : { x: scx, y: sy };
+    end = edge.toAnchor ? anchorAbsolutePoint(t, edge.toAnchor) : { x: tcx, y: ey };
+  }
+  return { horiz, start, end, mid: horiz ? (start.x + end.x) / 2 : (start.y + end.y) / 2 };
+}
+
+function computeOrthogonalDefault(edge, s, t) {
+  const { horiz, start, end, mid } = orthogonalDefaultBase(edge, s, t);
+  const m = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : 0);
+  if (horiz) return [start, { x: m, y: start.y }, { x: m, y: end.y }, end];
+  return [start, { x: start.x, y: m }, { x: end.x, y: m }, end];
+}
+
+// canvas.js calls this to turn a drag position directly into a new
+// edge.elbowOffset (absolute, not incremental) — {axis, base} says which
+// screen coordinate to read off the cursor and what to subtract from it.
+function computeOrthogonalElbowBase(edge, allNodes) {
+  const nodesById = {};
+  for (const n of allNodes) nodesById[n.id] = n;
+  const s = nodesById[edge.from];
+  const t = nodesById[edge.to];
+  if (!s || !t) return null;
+  const { horiz, mid } = orthogonalDefaultBase(edge, s, t);
+  return { axis: horiz ? 'x' : 'y', base: mid };
+}
+
 // Clips an axis-aligned segment (p0 -> p1, where p0 is inside/at the rect)
 // to where it crosses the rect's boundary — used to trim the first/last hop
-// of an orthogonal route back to the node's edge when that end has no
-// explicit anchor (so it starts from the center like before, then gets cut
-// short at the border).
+// of a waypointed route back to the node's edge when that end has no
+// explicit anchor.
 function clipAxisSegmentToRect(p0, p1, rect) {
   if (p0.y === p1.y) {
     const goingRight = p1.x >= p0.x;
@@ -87,32 +137,21 @@ function clipAxisSegmentToRect(p0, p1, rect) {
   return { x: p0.x, y: goingDown ? rect.y + rect.h : rect.y };
 }
 
-// One right-angle jog between two points, entering horizontally-then-vertically
-// or vertically-then-horizontally per `horizFirst` — a fixed choice shared by
-// every hop in the route (see computeOrthogonalPoints) so consecutive jogs
-// never land on the same corner and retrace themselves.
+// One right-angle jog between two points, entering horizontally-then-
+// vertically or vertically-then-horizontally per `horizFirst` — a fixed
+// choice shared by every hop in a waypointed route (see below) so
+// consecutive jogs never land on the same corner and retrace themselves.
 function orthogonalJog(a, b, horizFirst) {
   if (horizFirst) return [{ x: b.x, y: a.y }];
   return [{ x: a.x, y: b.y }];
 }
 
-// Builds a fully axis-aligned polyline from source to target, passing
-// through every waypoint in order. Every hop uses the same horizontal-first-
-// or vertical-first choice (decided once from the overall start→end
-// direction) so a multi-waypoint route staircases cleanly instead of any
-// hop's corner coinciding with its neighbor's and retracing. With no
-// waypoints and no anchors this reduces to exactly the original
-// single-elbow behavior (each end starts at its node's center, and
-// clipAxisSegmentToRect trims that first/last hop back to the border) —
-// anchors just replace the center starting point on whichever end has one.
-function computeOrthogonalPoints(edge, allNodes) {
-  const nodesById = {};
-  for (const n of allNodes) nodesById[n.id] = n;
-  const s = nodesById[edge.from];
-  const t = nodesById[edge.to];
-  if (!s || !t) return null;
-
-  const waypoints = Array.isArray(edge.waypoints) ? edge.waypoints : [];
+// The "advanced" route for an edge with explicit waypoints (added via
+// double-click — see canvas.js): a fully axis-aligned polyline passing
+// through every one of them in order, all hops sharing one orientation
+// (decided once from the overall start→end direction) so the path
+// staircases cleanly.
+function computeOrthogonalWaypointed(edge, s, t, waypoints) {
   const startRef = edge.fromAnchor ? anchorAbsolutePoint(s, edge.fromAnchor) : { x: s.x + s.w / 2, y: s.y + s.h / 2 };
   const endRef = edge.toAnchor ? anchorAbsolutePoint(t, edge.toAnchor) : { x: t.x + t.w / 2, y: t.y + t.h / 2 };
 
@@ -132,6 +171,16 @@ function computeOrthogonalPoints(edge, allNodes) {
     points[n - 1] = clipAxisSegmentToRect(points[n - 1], points[n - 2], { x: t.x, y: t.y, w: t.w, h: t.h });
   }
   return points;
+}
+
+function computeOrthogonalPoints(edge, allNodes) {
+  const nodesById = {};
+  for (const n of allNodes) nodesById[n.id] = n;
+  const s = nodesById[edge.from];
+  const t = nodesById[edge.to];
+  if (!s || !t) return null;
+  const waypoints = Array.isArray(edge.waypoints) ? edge.waypoints : [];
+  return waypoints.length ? computeOrthogonalWaypointed(edge, s, t, waypoints) : computeOrthogonalDefault(edge, s, t);
 }
 
 function polylineLength(points) {
@@ -160,13 +209,25 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     const points = computeOrthogonalPoints(edge, allNodes);
     if (!points) return null;
     const d = `M ${points.map((p) => `${p.x} ${p.y}`).join(' L ')}`;
-    const badge = pointAtPolylineFraction(points, 0.5);
+    const waypointed = Array.isArray(edge.waypoints) && edge.waypoints.length > 0;
+    // The default two-corner Z always has exactly 4 points; matching the
+    // original single-elbow badge placement (midpoint between the corners)
+    // keeps it stable under the elbow drag. A waypointed route can be any
+    // length, so its badge sits at the route's midpoint by arc length.
+    const badge = waypointed
+      ? pointAtPolylineFraction(points, 0.5)
+      : { x: (points[1].x + points[2].x) / 2, y: (points[1].y + points[2].y) / 2 };
     const labelPos = { x: badge.x, y: badge.y - 20 };
-    // `points` is the fully-jogged render path — each hop between real
-    // points (start/waypoint/end) inserts its own right-angle corner, so
-    // those corners are NOT 1:1 with edge.waypoints. `refs` is the actual
-    // editable point list canvas.js's drag/insert/remove logic should use.
-    const refs = [points[0], ...(Array.isArray(edge.waypoints) ? edge.waypoints : []), points[points.length - 1]];
+    // `refs` is the real editable point list — [start, ...waypoints, end] —
+    // with the jog algorithm's synthetic corners stripped out, since those
+    // aren't 1:1 with edge.waypoints. Only meaningful (and only used by
+    // canvas.js) once a route is waypointed; harmless otherwise.
+    // In default (non-waypointed) mode there are no real editable interior
+    // points — the two corners are synthetic, computed fresh from
+    // elbowOffset every render — so refs is just the endpoints, giving
+    // canvas.js's nearestPointIndex(refs.slice(1,-1), ...) an empty list to
+    // search rather than mistaking those corners for real bend points.
+    const refs = waypointed ? [points[0], ...edge.waypoints, points[points.length - 1]] : [points[0], points[points.length - 1]];
     return { start: points[0], end: points[points.length - 1], d, badge, labelPos, points, refs };
   }
 
@@ -174,72 +235,36 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
   if (!ep) return null;
   const { start, end } = ep;
 
-  // Multi-point curves take priority; a lone legacy `curve` (a signed
-  // perpendicular offset from the straight-line midpoint, pre-dating
-  // multi-point editing) still renders exactly as before when present alone.
-  // With neither, parallel same-pair edges still auto-separate so they don't
-  // overlap — same as before multi-point editing existed.
-  let curvePoints = Array.isArray(edge.curvePoints) ? edge.curvePoints : null;
-  if (!curvePoints) {
-    let bend = typeof edge.curve === 'number' ? edge.curve : 0;
-    if (bend === 0) {
-      const group = allEdges.filter((e) => pairKey(e.from, e.to) === pairKey(edge.from, edge.to));
-      if (group.length > 1) {
-        const idx = group.findIndex((e) => e.id === edge.id);
-        const mid = (group.length - 1) / 2;
-        bend = (idx - mid) * 28;
-      }
-    }
-    if (bend !== 0) {
-      const mx = (start.x + end.x) / 2, my = (start.y + end.y) / 2;
-      const { nx, ny } = edgeNormal(start, end);
-      curvePoints = [{ x: mx + nx * bend, y: my + ny * bend }];
-    }
-  }
+  // Parallel same-pair edges auto-separate unless a real bend is set.
+  const group = allEdges.filter((e) => pairKey(e.from, e.to) === pairKey(edge.from, edge.to));
+  const idx = group.findIndex((e) => e.id === edge.id);
+  const mid = (group.length - 1) / 2;
+  const autoBend = group.length > 1 ? (idx - mid) * 28 : 0;
+  const bend = typeof edge.curve === 'number' ? edge.curve : autoBend;
 
-  const points = [start, ...(curvePoints || []), end];
+  const mx = (start.x + end.x) / 2;
+  const my = (start.y + end.y) / 2;
+  const { nx, ny } = edgeNormal(start, end);
 
   let d, badge;
-  if (!curvePoints || curvePoints.length === 0) {
+  if (bend === 0) {
     d = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-    badge = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-  } else if (curvePoints.length === 1) {
-    const c = curvePoints[0];
-    d = `M ${start.x} ${start.y} Q ${c.x} ${c.y} ${end.x} ${end.y}`;
-    badge = { x: c.x, y: c.y };
+    badge = { x: mx, y: my };
   } else {
-    // Smooth multi-point curve: quadratic-through-midpoints, a standard trick
-    // for turning N control points into a smooth path — each control point
-    // pulls the curve toward it without a hard corner at the joins.
-    let dParts = [`M ${start.x} ${start.y}`];
-    for (let i = 0; i < curvePoints.length - 1; i++) {
-      const c = curvePoints[i];
-      const nextC = curvePoints[i + 1];
-      const joint = { x: (c.x + nextC.x) / 2, y: (c.y + nextC.y) / 2 };
-      dParts.push(`Q ${c.x} ${c.y} ${joint.x} ${joint.y}`);
-    }
-    const last = curvePoints[curvePoints.length - 1];
-    dParts.push(`Q ${last.x} ${last.y} ${end.x} ${end.y}`);
-    d = dParts.join(' ');
-    const sumX = curvePoints.reduce((s, p) => s + p.x, 0);
-    const sumY = curvePoints.reduce((s, p) => s + p.y, 0);
-    badge = { x: sumX / curvePoints.length, y: sumY / curvePoints.length };
+    const cx = mx + nx * bend;
+    const cy = my + ny * bend;
+    d = `M ${start.x} ${start.y} Q ${cx} ${cy} ${end.x} ${end.y}`;
+    badge = { x: cx, y: cy };
   }
 
-  // Where an optional protocol label (e.g. "REST", "gRPC") sits — offset from
-  // the badge along the local curve normal so it clears the number badge.
-  const { nx, ny } = edgeNormal(start, end);
   const labelPos = { x: badge.x + nx * 20, y: badge.y + ny * 20 };
-
-  // Curves have no synthetic corners — every interior point in `points` is a
-  // real curvePoints entry — so `refs` is just `points` itself.
+  const points = bend === 0 ? [start, end] : [start, { x: badge.x, y: badge.y }, end];
   return { start, end, d, badge, labelPos, points, refs: points };
 }
 
 // Given a point the user dragged to, returns the perpendicular signed
-// distance from the edge's straight-line midpoint — used only to seed a
-// freshly-migrated legacy `curve` number; new drags work directly in
-// absolute coordinates (see startEdgeBend in canvas.js).
+// distance from the edge's straight-line midpoint — this directly becomes
+// the new edge.curve.
 function computeBendFromPoint(edge, allNodes, point) {
   const ep = computeStraightEndpoints(edge, allNodes);
   if (!ep) return 0;
@@ -250,8 +275,8 @@ function computeBendFromPoint(edge, allNodes, point) {
   return (point.x - mx) * nx + (point.y - my) * ny;
 }
 
-// ---------- Shared hit-testing for the drag-to-add/move/remove-a-point
-// interaction (curvePoints and waypoints alike) ----------
+// ---------- Shared hit-testing for waypointed orthogonal routes ----------
+// (Curves have only one bend point, so they don't need this.)
 
 function distToSegment(p, a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -262,8 +287,8 @@ function distToSegment(p, a, b) {
   return Math.hypot(p.x - projX, p.y - projY);
 }
 
-// Nearest of a flat list of points (the edge's own bend points) — used to
-// decide whether a drag/double-click grabs an existing point.
+// Nearest of a flat list of points (an edge's own bend points) — used to
+// decide whether a drag/double-click targets an existing point.
 function nearestPointIndex(points, p) {
   let best = -1, bestDist = Infinity;
   points.forEach((cp, i) => {
@@ -274,8 +299,8 @@ function nearestPointIndex(points, p) {
 }
 
 // Nearest segment of the full ordered [start, ...mid, end] list — the
-// returned index doubles as the correct splice() position within the edge's
-// own mid-points array (see arrows.js header comment).
+// returned index doubles as the correct splice() position within
+// edge.waypoints.
 function nearestSegmentIndex(fullPoints, p) {
   let best = 0, bestDist = Infinity;
   for (let i = 0; i < fullPoints.length - 1; i++) {

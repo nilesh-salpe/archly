@@ -228,7 +228,8 @@ function buildHelpPanel() {
     <dl>
       <dt>drag</dt><dd>Move a node, or resize a container from its corner handle</dd>
       <dt>drag near an edge</dt><dd>Draw a flow arrow from that exact point — any point on the border, not fixed dots</dd>
-      <dt>drag a line</dt><dd>Add a bend point at that spot — works for curved and orthogonal arrows, and for multiple points</dd>
+      <dt>drag a line</dt><dd>Move its bend — a curve's one bend point, or an orthogonal arrow's middle segment</dd>
+      <dt>double-click a line</dt><dd>Orthogonal: add an extra elbow there. Curve: remove its bend</dd>
       <dt>double-click a bend point</dt><dd>Remove it</dd>
       <dt>shift-click</dt><dd>Add/remove a node from a multi-selection</dd>
       <dt>drag empty canvas</dt><dd>Rubber-band select multiple nodes</dd>

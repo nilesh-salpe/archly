@@ -20,9 +20,9 @@ no build step, meant to run on GitHub Pages.
 - **Numbered flow arrows** — drag from *any point* on a node's border (not
   just fixed dots) to another node to draw an arrow; click its number badge
   to edit the request-flow order.
-- **Freely shapeable arrows** — drag anywhere along a line to add a bend
-  point, for both curved and right-angle (orthogonal) routing, with as many
-  points as you want; drag a point to move it, double-click to remove it.
+- **Shapeable arrows** — drag a curved arrow's line to bend it; drag a
+  right-angle (orthogonal) arrow's line to slide its elbow. Double-click
+  adds an extra elbow beyond the default pair, or removes a bend.
 - **Play the request flow** — animates a dot along each arrow in numbered
   order, pulsing the active nodes. Pause / Reset / Speed controls included.
 - **Pattern library** — 14 pre-built diagrams (3-Tier Web App, Microservices

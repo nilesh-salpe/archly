@@ -762,7 +762,7 @@ function renderEdge(e) {
   badge.appendChild(numText);
 
   hit.addEventListener('pointerdown', (ev) => startEdgeBend(ev, e));
-  hit.addEventListener('dblclick', (ev) => removeNearestEdgePoint(ev, e));
+  hit.addEventListener('dblclick', (ev) => onEdgeDoubleClick(ev, e));
   hit.addEventListener('contextmenu', (ev) => onEdgeContextMenu(ev, e));
   badge.addEventListener('click', (ev) => {
     ev.stopPropagation();
@@ -1153,99 +1153,175 @@ function findNodeAtPoint(clientX, clientY, excludeId) {
   return null;
 }
 
-// ---------- Edge bending (drag anywhere along the line to add/move a bend
-// point, double-click a bend point to remove it) ----------
-// Works the same way for curved (`curvePoints`) and orthogonal (`waypoints`)
-// edges — only which array gets edited differs. Dragging near an existing
-// point moves it; dragging elsewhere on the line inserts a new one at that
-// spot. A short drag threshold tells a genuine bend apart from a plain
-// click, which still just selects the edge.
+// ---------- Edge bending ----------
+// Three separate, predictable interactions instead of one "drag anywhere
+// adds a point" gesture — that felt uncontrollable (every touch added
+// another bend) and doesn't match how draw.io/Visio/Lucidchart behave.
+//
+// - Curve (no routing set): exactly one bend point. Drag anywhere on the
+//   line to set/move it (edge.curve); double-click removes it.
+// - Orthogonal, no explicit waypoints: the classic auto two-corner "Z" (or
+//   straight/"L" when rows or columns align). Drag *moves* the middle
+//   segment (edge.elbowOffset) — this never creates a new bend.
+// - Orthogonal, with waypoints: an explicit, deliberate escape hatch for
+//   routes that need more than the default two corners. You only get here
+//   via double-click (never a plain drag); once there, dragging moves an
+//   existing waypoint, it does not add another.
+//
+// All three share the same "moved" threshold so a plain click still just
+// selects the edge rather than nudging a bend by a pixel.
 
 const EDGE_POINT_GRAB_RADIUS = 10;
-let edgeBendCtx = null;
-
-function edgePointsKey(edge) {
-  return edge.routing === 'orthogonal' ? 'waypoints' : 'curvePoints';
-}
 
 function startEdgeBend(ev, edge) {
   ev.stopPropagation();
+  if (edge.routing === 'orthogonal') {
+    if (edge.waypoints && edge.waypoints.length) startWaypointDrag(ev, edge);
+    else startElbowDrag(ev, edge);
+  } else {
+    startCurveDrag(ev, edge);
+  }
+}
+
+// ---- Curve: one bend point ----
+
+let curveDragCtx = null;
+
+function startCurveDrag(ev, edge) {
+  curveDragCtx = { edge, startClient: { x: ev.clientX, y: ev.clientY }, moved: false };
+  window.addEventListener('pointermove', onCurveDragMove);
+  window.addEventListener('pointerup', onCurveDragUp);
+}
+
+function onCurveDragMove(ev) {
+  if (!curveDragCtx) return;
+  const dx = ev.clientX - curveDragCtx.startClient.x;
+  const dy = ev.clientY - curveDragCtx.startClient.y;
+  if (!curveDragCtx.moved && Math.hypot(dx, dy) > 4) curveDragCtx.moved = true;
+  if (!curveDragCtx.moved) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  curveDragCtx.edge.curve = computeBendFromPoint(curveDragCtx.edge, state.nodes, p);
+  renderAll();
+}
+
+function onCurveDragUp() {
+  window.removeEventListener('pointermove', onCurveDragMove);
+  window.removeEventListener('pointerup', onCurveDragUp);
+  if (!curveDragCtx) return;
+  if (curveDragCtx.moved) saveState();
+  else selectItem('edge', curveDragCtx.edge.id);
+  curveDragCtx = null;
+}
+
+// ---- Orthogonal default: slide the one middle segment ----
+
+let elbowDragCtx = null;
+
+function startElbowDrag(ev, edge) {
+  const base = computeOrthogonalElbowBase(edge, state.nodes);
+  if (!base) return;
+  elbowDragCtx = { edge, base, startClient: { x: ev.clientX, y: ev.clientY }, moved: false };
+  window.addEventListener('pointermove', onElbowDragMove);
+  window.addEventListener('pointerup', onElbowDragUp);
+}
+
+function onElbowDragMove(ev) {
+  if (!elbowDragCtx) return;
+  const dx = ev.clientX - elbowDragCtx.startClient.x;
+  const dy = ev.clientY - elbowDragCtx.startClient.y;
+  if (!elbowDragCtx.moved && Math.hypot(dx, dy) > 4) elbowDragCtx.moved = true;
+  if (!elbowDragCtx.moved) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  const { axis, base } = elbowDragCtx.base;
+  elbowDragCtx.edge.elbowOffset = (axis === 'x' ? p.x : p.y) - base;
+  renderAll();
+}
+
+function onElbowDragUp() {
+  window.removeEventListener('pointermove', onElbowDragMove);
+  window.removeEventListener('pointerup', onElbowDragUp);
+  if (!elbowDragCtx) return;
+  if (elbowDragCtx.moved) saveState();
+  else selectItem('edge', elbowDragCtx.edge.id);
+  elbowDragCtx = null;
+}
+
+// ---- Orthogonal, waypointed: move an existing point only (adding one is
+// a double-click, see onEdgeDoubleClick) ----
+
+let waypointDragCtx = null;
+
+function startWaypointDrag(ev, edge) {
   const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
   if (!geo) return;
   const mid = geo.refs.slice(1, -1);
   const p0 = toSVGCoords(ev.clientX, ev.clientY);
   const { index, dist } = nearestPointIndex(mid, p0);
-  edgeBendCtx = {
+  waypointDragCtx = {
     edge,
-    key: edgePointsKey(edge),
+    grabIndex: dist < EDGE_POINT_GRAB_RADIUS ? index : -1, // -1 = not near a point; drag does nothing but a click still selects
     startClient: { x: ev.clientX, y: ev.clientY },
     moved: false,
-    fullPointsAtStart: geo.refs,
-    grabIndex: dist < EDGE_POINT_GRAB_RADIUS ? index : -1, // -1 = insert a new point on first real move
   };
-  window.addEventListener('pointermove', onEdgeBendMove);
-  window.addEventListener('pointerup', onEdgeBendUp);
+  window.addEventListener('pointermove', onWaypointDragMove);
+  window.addEventListener('pointerup', onWaypointDragUp);
 }
 
-function onEdgeBendMove(ev) {
-  if (!edgeBendCtx) return;
-  const dx = ev.clientX - edgeBendCtx.startClient.x;
-  const dy = ev.clientY - edgeBendCtx.startClient.y;
-  if (!edgeBendCtx.moved && Math.hypot(dx, dy) > 4) {
-    edgeBendCtx.moved = true;
-    const { edge, key } = edgeBendCtx;
-    // Materialize the *currently rendered* mid-points into the array we're
-    // about to edit — this is what lazily migrates a legacy single-offset
-    // `curve` (or an auto-separated parallel edge) into a real curvePoints
-    // array the moment it's re-dragged, with no visual jump.
-    edge[key] = edgeBendCtx.fullPointsAtStart.slice(1, -1).map((pt) => ({ x: pt.x, y: pt.y }));
-    if (key === 'curvePoints') edge.curve = undefined;
-
-    if (edgeBendCtx.grabIndex === -1) {
-      const p = toSVGCoords(ev.clientX, ev.clientY);
-      const { index } = nearestSegmentIndex(edgeBendCtx.fullPointsAtStart, p);
-      edge[key].splice(index, 0, { x: p.x, y: p.y });
-      edgeBendCtx.grabIndex = index;
-    }
-  }
-  if (!edgeBendCtx.moved) return;
+function onWaypointDragMove(ev) {
+  if (!waypointDragCtx || waypointDragCtx.grabIndex === -1) return;
+  const dx = ev.clientX - waypointDragCtx.startClient.x;
+  const dy = ev.clientY - waypointDragCtx.startClient.y;
+  if (!waypointDragCtx.moved && Math.hypot(dx, dy) > 4) waypointDragCtx.moved = true;
+  if (!waypointDragCtx.moved) return;
   const p = toSVGCoords(ev.clientX, ev.clientY);
-  edgeBendCtx.edge[edgeBendCtx.key][edgeBendCtx.grabIndex] = { x: p.x, y: p.y };
+  waypointDragCtx.edge.waypoints[waypointDragCtx.grabIndex] = { x: p.x, y: p.y };
   renderAll();
 }
 
-function onEdgeBendUp() {
-  window.removeEventListener('pointermove', onEdgeBendMove);
-  window.removeEventListener('pointerup', onEdgeBendUp);
-  if (!edgeBendCtx) return;
-  if (edgeBendCtx.moved) {
-    saveState();
-  } else {
-    selectItem('edge', edgeBendCtx.edge.id); // no drag happened — treat as a plain click
-  }
-  edgeBendCtx = null;
+function onWaypointDragUp() {
+  window.removeEventListener('pointermove', onWaypointDragMove);
+  window.removeEventListener('pointerup', onWaypointDragUp);
+  if (!waypointDragCtx) return;
+  if (waypointDragCtx.moved) saveState();
+  else selectItem('edge', waypointDragCtx.edge.id);
+  waypointDragCtx = null;
 }
 
-function removeNearestEdgePoint(ev, edge) {
-  ev.stopPropagation();
-  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
-  if (!geo) return;
-  const mid = geo.refs.slice(1, -1);
-  if (!mid.length) return;
-  const p = toSVGCoords(ev.clientX, ev.clientY);
-  const { index, dist } = nearestPointIndex(mid, p);
-  if (index < 0 || dist >= EDGE_POINT_GRAB_RADIUS + 2) return;
+// ---- Double-click: the only way to add or remove a bend point beyond an
+// orthogonal edge's default two corners; also removes a curve's one bend ----
 
-  const key = edgePointsKey(edge);
-  if (Array.isArray(edge[key]) && edge[key].length) {
-    edge[key].splice(index, 1);
-  } else if (key === 'curvePoints' && typeof edge.curve === 'number') {
-    edge.curve = undefined; // removing the one legacy bend point
-  } else {
+function onEdgeDoubleClick(ev, edge) {
+  ev.stopPropagation();
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+
+  if (edge.routing === 'orthogonal') {
+    const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+    if (!geo) return;
+    const mid = geo.refs.slice(1, -1);
+    if (mid.length) {
+      const { index, dist } = nearestPointIndex(mid, p);
+      if (index >= 0 && dist < EDGE_POINT_GRAB_RADIUS + 2) {
+        edge.waypoints.splice(index, 1);
+        if (!edge.waypoints.length) edge.waypoints = undefined;
+        renderAll();
+        saveState();
+        return;
+      }
+    }
+    // Not near an existing point — add a new elbow here.
+    const { index } = nearestSegmentIndex(geo.refs, p);
+    edge.waypoints = mid.length ? [...edge.waypoints] : [];
+    edge.waypoints.splice(index, 0, { x: p.x, y: p.y });
+    renderAll();
+    saveState();
     return;
   }
-  renderAll();
-  saveState();
+
+  if (typeof edge.curve === 'number' && edge.curve !== 0) {
+    edge.curve = undefined;
+    renderAll();
+    saveState();
+  }
 }
 
 // ---------- Selection & deletion ----------
@@ -1519,7 +1595,7 @@ function buildEdgeMenuItems(e, menuX, menuY) {
     });
   }
   items.push('-');
-  items.push({ label: 'Routing (drag the line to add bend points)', heading: true });
+  items.push({ label: 'Routing (drag the line to move its bend)', heading: true });
   const isOrthogonal = e.routing === 'orthogonal';
   items.push({
     label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved',
@@ -1534,17 +1610,16 @@ function buildEdgeMenuItems(e, menuX, menuY) {
     action: () => {
       e.routing = 'orthogonal';
       e.curve = undefined;
-      e.curvePoints = undefined;
       renderAll();
       saveState();
     },
   });
-  if (e.curve || (e.curvePoints && e.curvePoints.length) || (e.waypoints && e.waypoints.length)) {
+  if (e.curve || (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) || (e.waypoints && e.waypoints.length)) {
     items.push({
       label: '   Straighten (clear bend points)',
       action: () => {
         e.curve = undefined;
-        e.curvePoints = undefined;
+        e.elbowOffset = undefined;
         e.waypoints = undefined;
         renderAll();
         saveState();

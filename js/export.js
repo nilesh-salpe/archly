@@ -244,9 +244,7 @@ function diagramToYAMLObject() {
       if (e.routing === 'orthogonal') obj.routing = 'orthogonal';
       if (e.fromAnchor) obj.fromAnchor = e.fromAnchor;
       if (e.toAnchor) obj.toAnchor = e.toAnchor;
-      if (Array.isArray(e.curvePoints) && e.curvePoints.length) {
-        obj.curvePoints = e.curvePoints.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
-      }
+      if (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) obj.elbowOffset = Math.round(e.elbowOffset);
       if (Array.isArray(e.waypoints) && e.waypoints.length) {
         obj.waypoints = e.waypoints.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
       }
@@ -316,7 +314,7 @@ function importYAMLFile(file) {
         routing: e.routing === 'orthogonal' ? 'orthogonal' : undefined,
         fromAnchor: e.fromAnchor || undefined,
         toAnchor: e.toAnchor || undefined,
-        curvePoints: Array.isArray(e.curvePoints) ? e.curvePoints : undefined,
+        elbowOffset: typeof e.elbowOffset === 'number' ? e.elbowOffset : undefined,
         waypoints: Array.isArray(e.waypoints) ? e.waypoints : undefined,
       }));
 

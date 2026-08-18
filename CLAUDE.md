@@ -89,31 +89,43 @@ exports).
     border point is closest to the other node's center (`clipPointOnRect`).
     Anchors are node-relative fractions, so they track a node through
     move/resize with no extra bookkeeping.
-  - **Curved routing** (`edge.routing` unset): `edge.curvePoints`, an ordered
-    list of absolute `{x,y}` control points, renders as a quadratic-through-
-    midpoints smooth curve (0 points = straight line, 1 = the classic single
-    `Q` bend, 2+ = a multi-point curve). A lone legacy `edge.curve` (a signed
-    perpendicular offset from the midpoint, pre-dating multi-point editing —
-    still what `js/patterns.js`/pattern YAML mostly use) renders identically
-    to a single-item `curvePoints`, and parallel same-pair edges still
-    auto-separate when neither is set.
-  - **Orthogonal routing** (`edge.routing === 'orthogonal'`): `edge.waypoints`
-    (same shape as `curvePoints`) are the real points a right-angle route
-    must pass through; `computeOrthogonalPoints` jogs between every
-    consecutive pair using **one orientation decided from the overall
-    start→end direction**, applied to every hop — critical: deciding
-    orientation per-hop (the first attempt at this) let two adjacent jogs
-    land on the same corner and made the path double back on itself.
+  - **Curved routing** (`edge.routing` unset): exactly **one** bend point —
+    `edge.curve`, a signed perpendicular offset from the straight-line
+    midpoint. Dragging the line sets it (`computeBendFromPoint`);
+    double-click removes it. Parallel same-pair edges auto-separate when
+    `edge.curve` isn't set. (An earlier version generalized this to an
+    ordered `edge.curvePoints` array so a curve could take unlimited bends —
+    reverted: every drag added another point, which doesn't match how
+    draw.io/Visio/Lucidchart behave and made diagrams unpredictable fast.)
+  - **Orthogonal routing** (`edge.routing === 'orthogonal'`) has two modes:
+    - **Default** (no `edge.waypoints`): the classic auto two-corner "Z" (or
+      straight/"L" when rows or columns already align) — `computeOrthogonalDefault`,
+      built on `orthogonalDefaultBase` (shared with canvas.js's elbow-drag so
+      both compute the exact same base position). The *only* adjustable
+      value is `edge.elbowOffset`, which slides the middle segment —
+      dragging the line **moves** it, it never creates a new bend.
+    - **Waypointed** (`edge.waypoints` non-empty): an explicit, deliberate
+      escape hatch — reached only via double-click, never a plain drag — for
+      routes that need more than the default pair of corners.
+      `computeOrthogonalWaypointed` jogs between every consecutive pair
+      using **one orientation decided from the overall start→end
+      direction**, applied to every hop — important: deciding orientation
+      per-hop (the first attempt at this) let two adjacent jogs land on the
+      same corner and made the path double back on itself.
   - **`points` vs `refs`**: `points` is the *fully rendered* polyline (used
-    for the `d` string) — for orthogonal routes this includes a synthetic
-    corner per hop that isn't a real waypoint. `refs` is `[start, ...editable
-    points..., end]` with those synthetic corners stripped out; canvas.js's
-    drag/insert/remove interaction must hit-test against `refs`, never
-    `points` — using `points` there was the bug above.
+    for the `d` string) — for a waypointed orthogonal route this includes a
+    synthetic corner per hop that isn't a real waypoint, and for the default
+    Z it's 4 points that aren't editable at all. `refs` is the real editable
+    point list (`[start, end]` for a curve or a default-mode Z — i.e.
+    nothing draggable in between; `[start, ...waypoints, end]` once
+    waypointed) with those synthetic points stripped out. canvas.js's
+    drag/add/remove interaction must hit-test against `refs`, never
+    `points` — using `points` (or including the Z's synthetic corners in
+    `refs`) was the source of two separate bugs during development.
   - `nearestPointIndex`/`nearestSegmentIndex` are the shared hit-testing
-    helpers `startEdgeBend`/`removeNearestEdgePoint` (canvas.js) use for both
-    curve and orthogonal editing — a segment's index in `refs` doubles as the
-    correct `splice()` position in `edge.curvePoints`/`edge.waypoints`.
+    helpers `startWaypointDrag`/`onEdgeDoubleClick` (canvas.js) use for
+    waypointed-orthogonal editing — a segment's index in `refs` doubles as
+    the correct `splice()` position in `edge.waypoints`.
 - **`js/animate.js`** — the "Play" flow animation. Edges are grouped by
   `number`; same-numbered edges animate **concurrently** (each gets its own
   dot via `getFlowDotFor`), and the engine waits for a whole group before
@@ -171,14 +183,16 @@ exports).
   spot (see arrows.js). Containers and text-only nodes are excluded (no
   border-drag source) — connecting *to* a container/text node still works,
   it just doesn't get a fixed anchor, matching the pre-anchor dynamic default.
-- Edge: drag anywhere along the line to add a bend point (curved or
-  orthogonal, one or many — see `startEdgeBend`/`onEdgeBendMove` and the
-  arrows.js section above), drag an existing point to move it, double-click
-  a point to remove it (`removeNearestEdgePoint`). A plain click (no
-  movement) selects it; right-click for the full menu (line style, routing,
-  arrowhead, protocol label, "Straighten" to clear all bend points, delete).
-  The numbered badge itself is click-to-edit-number only, unrelated to
-  bending.
+- Edge: `startEdgeBend` (canvas.js) dispatches by edge type/mode to one of
+  three drag handlers — curve (`startCurveDrag`, moves the one bend point),
+  default orthogonal (`startElbowDrag`, slides the Z's middle segment), or
+  waypointed orthogonal (`startWaypointDrag`, moves an existing waypoint
+  only — never adds one). `onEdgeDoubleClick` is the only way to add a
+  waypoint beyond an orthogonal edge's default pair, or to remove a curve's
+  bend or an existing waypoint. A plain click (no movement) selects the
+  edge; right-click for the full menu (line style, routing, arrowhead,
+  protocol label, "Straighten" to clear all bend points, delete). The
+  numbered badge itself is click-to-edit-number only, unrelated to bending.
 - Selection actions (rename/duplicate/copy/layer/delete for nodes; line
   style/routing/arrowhead/protocol/delete for edges) live in exactly one
   place — `buildNodeMenuItems`/`buildEdgeMenuItems`/`buildMultiSelectMenuItems`
