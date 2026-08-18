@@ -169,8 +169,24 @@ exports).
     `<img>`, only when it's the top-level document or an `<object>`/`<iframe>`.
 - **`js/app.js`** — palette build (+ search/filter, + collapsible category
   sections, all default-collapsed) and toolbar wiring.
-
-## Editing model quick reference
+- **`js/simulate.js`** — rough latency/cost estimates, toggled from View ▾
+  ("Latency & Cost") — deliberately *not* a separate mode/screen, just an
+  optional annotation layer (`#layer-sim`, `no-export` so it never shows up
+  in exports) plus a small floating summary box (`#sim-summary`). Numbers
+  come from `CATEGORY_DEFAULT_LATENCY_MS`/`CATEGORY_DEFAULT_COST_PER_HOUR`
+  (components.js, per-category — not per-component-type, to keep ~90
+  components maintainable) unless a node has its own `latencyMs`/
+  `costPerHour` (no editor UI for that yet, only settable by hand-editing
+  the diagram — first, deliberately simple pass). `computeE2ELatencyMs()`
+  reuses `getStepGroups()` (animate.js) — the exact same grouping Play
+  uses — so sequential numbered steps add and concurrent (same-numbered)
+  steps take the max of their branches, matching what watching Play would
+  show you. Edges styled with no arrowhead (`arrowStyle: 'none'`, the
+  fire-and-forget convention several patterns use for metrics/logging side
+  edges) are excluded as non-blocking. `computeTotalCostPerHour()` sums
+  every non-container, non-text node's cost — independent of the flow,
+  since cost is "what's running," not "what's used per request." No RPS/
+  load or chaos-failure simulation yet — planned as later, separate passes.
 
 - Node label: click the label text to rename inline (single-line `<input>`,
   or a `<textarea>` for the textOnly "Text" tool). Body/icon drag to move.

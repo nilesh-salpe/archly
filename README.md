@@ -25,6 +25,10 @@ no build step, meant to run on GitHub Pages.
   adds an extra elbow beyond the default pair, or removes a bend.
 - **Play the request flow** — animates a dot along each arrow in numbered
   order, pulsing the active nodes. Pause / Reset / Speed controls included.
+- **Simulated latency & cost** (View ▾) — a per-node estimate badge and an
+  end-to-end latency + hourly cost summary, computed from practical
+  category-level defaults (editable per node by hand-editing the diagram
+  for now).
 - **Pattern library** — 14 pre-built diagrams (3-Tier Web App, Microservices
   + API Gateway, Cache-Aside, ML, GenAI, RAG, Event-Driven/Pub-Sub, Async Job
   Queue, Serverless, Batch/ETL, Multi-Region DR, Saga, Multi-Agent GenAI,

@@ -298,6 +298,8 @@ function wireToolbar() {
       { label: (showGrid ? '✓ ' : '   ') + 'Grid Background', action: toggleGrid },
       { label: (showRulers ? '✓ ' : '   ') + 'Rulers', action: toggleRulers },
       { label: (showPalette ? '✓ ' : '   ') + 'Palette', action: togglePalette },
+      '-',
+      { label: (showSimAnnotations ? '✓ ' : '   ') + 'Latency & Cost (simulated)', action: toggleSimAnnotations },
     ]);
   });
 

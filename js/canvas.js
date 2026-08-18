@@ -52,6 +52,7 @@ function initCanvas() {
 
   loadState();
   loadPrefs();
+  loadSimPrefs();
   applyViewPrefs();
   applyZoom();
   renderAll();
@@ -416,6 +417,8 @@ function renderAll() {
   const emptyState = document.getElementById('empty-state');
   if (emptyState) emptyState.style.display = state.nodes.length === 0 ? 'flex' : 'none';
 
+  renderSimAnnotations();
+  updateSimSummary();
   updateToolbarState();
 }
 

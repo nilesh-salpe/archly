@@ -70,6 +70,52 @@ const CATEGORY_LABELS = {
   general: 'General',
 };
 
+// Rough, practical starting points for the latency/cost simulation
+// (js/simulate.js) — a category-level default (not per-component-type,
+// to keep this maintainable) that shows *something* useful the moment a
+// node is placed, not accurate numbers for any real deployment. Containers
+// and freeform shapes (netbound's boxes, general) get ~0 since they aren't
+// billable, request-handling infrastructure themselves.
+const CATEGORY_DEFAULT_LATENCY_MS = {
+  client: 0,
+  edge: 5,
+  netbound: 1,
+  services: 10,
+  compute: 8,
+  communication: 5,
+  cache: 1,
+  data: 15,
+  processing: 50,
+  reliability: 1,
+  security: 5,
+  observability: 2,
+  ml: 60,
+  genai: 400,
+  rag: 30,
+  external: 150,
+  general: 0,
+};
+
+const CATEGORY_DEFAULT_COST_PER_HOUR = {
+  client: 0,
+  edge: 0.02,
+  netbound: 0.01,
+  services: 0.04,
+  compute: 0.05,
+  communication: 0.02,
+  cache: 0.02,
+  data: 0.12,
+  processing: 0.06,
+  reliability: 0.01,
+  security: 0.02,
+  observability: 0.01,
+  ml: 0.3,
+  genai: 0.05,
+  rag: 0.08,
+  external: 0, // third-party — not infrastructure you run/pay hourly for
+  general: 0,
+};
+
 // Icon fragments, viewBox-local coordinates 0..24. Kept intentionally simple
 // (circles/rects/paths) so they read clearly at small node size.
 const ICONS = {

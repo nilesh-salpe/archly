@@ -8,7 +8,7 @@
      and every js/*.js below) so returning visitors' browsers fetch the new files
      instead of serving stale cached ones. See js/patterns.js's ASSET_VERSION for
      the matching bump on the patterns/*.yaml fetches. -->
-<link rel="stylesheet" href="css/styles.css?v=5" />
+<link rel="stylesheet" href="css/styles.css?v=6" />
 </head>
 <body>
   <div class="app">
@@ -82,6 +82,7 @@
             <div class="empty-state-patterns" id="empty-state-patterns"></div>
           </div>
         </div>
+        <div id="sim-summary" class="sim-summary" style="display:none"></div>
         <div class="canvas-scroll" id="canvas-scroll">
           <svg id="canvas" width="2400" height="1600" viewBox="0 0 2400 1600" xmlns="http://www.w3.org/2000/svg">
             <defs>
@@ -92,6 +93,7 @@
             <g id="layer-containers"></g>
             <g id="layer-edges"></g>
             <g id="layer-nodes"></g>
+            <g id="layer-sim" class="no-export"></g>
             <g id="layer-overlay" class="no-export"></g>
           </svg>
         </div>
@@ -103,13 +105,14 @@
     </footer>
   </div>
 
-  <script src="js/components.js?v=5"></script>
-  <script src="js/yaml.js?v=5"></script>
-  <script src="js/canvas.js?v=5"></script>
-  <script src="js/arrows.js?v=5"></script>
-  <script src="js/animate.js?v=5"></script>
-  <script src="js/patterns.js?v=5"></script>
-  <script src="js/export.js?v=5"></script>
-  <script src="js/app.js?v=5"></script>
+  <script src="js/components.js?v=6"></script>
+  <script src="js/yaml.js?v=6"></script>
+  <script src="js/canvas.js?v=6"></script>
+  <script src="js/arrows.js?v=6"></script>
+  <script src="js/animate.js?v=6"></script>
+  <script src="js/simulate.js?v=6"></script>
+  <script src="js/patterns.js?v=6"></script>
+  <script src="js/export.js?v=6"></script>
+  <script src="js/app.js?v=6"></script>
 </body>
 </html>
