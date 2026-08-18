@@ -10,7 +10,7 @@ const PATTERN_FILES = ['3tier.yaml', 'microservices.yaml', 'cache-aside.yaml', '
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '1';
+const ASSET_VERSION = '2';
 
 let PATTERNS = [];
 
