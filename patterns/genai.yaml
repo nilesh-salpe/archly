@@ -1,0 +1,79 @@
+id: genai
+name: GenAI Application
+title: GenAI Application
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 320
+  - id: webapp
+    type: webapp
+    x: 280
+    y: 320
+  - id: auth
+    type: auth
+    x: 280
+    y: 110
+  - id: memory
+    type: memory
+    x: 500
+    y: 110
+    label: Conversation Memory
+  - id: prompttemplate
+    type: prompttemplate
+    x: 500
+    y: 320
+    label: Prompt
+  - id: llmgateway
+    type: llmgateway
+    x: 720
+    y: 320
+  - id: ratelimiter
+    type: ratelimiter
+    x: 720
+    y: 110
+    label: Rate Limiter
+  - id: guardrails
+    type: guardrails
+    x: 940
+    y: 320
+  - id: modelprovider
+    type: modelprovider
+    x: 1160
+    y: 320
+    label: External LLM
+  - id: metrics
+    type: metrics
+    x: 1160
+    y: 110
+    label: "Token / Cost Metrics"
+edges:
+  - from: user
+    to: webapp
+    number: 1
+  - from: webapp
+    to: auth
+    number: 2
+  - from: webapp
+    to: memory
+    number: 3
+  - from: webapp
+    to: prompttemplate
+    number: 4
+  - from: prompttemplate
+    to: llmgateway
+    number: 5
+  - from: llmgateway
+    to: ratelimiter
+    number: 6
+  - from: ratelimiter
+    to: guardrails
+    number: 7
+  - from: guardrails
+    to: modelprovider
+    number: 8
+  - from: modelprovider
+    to: metrics
+    number: 9
+    lineStyle: dotted
+    arrowStyle: none

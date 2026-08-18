@@ -115,3 +115,96 @@ function exportPNGFile() {
   };
   img.src = dataUrl;
 }
+
+// ---------- YAML export / import ----------
+// A human-readable, hand-editable alternative to PNG/SVG: the diagram's raw
+// node/edge data rather than a rendering of it. `category`/`icon`/`container`/
+// `textOnly` are never written — they're always re-derived from `type` via
+// getComponent() on import, exactly like loading a built-in pattern does.
+
+function diagramToYAMLObject() {
+  return {
+    nodes: state.nodes.map((n) => ({
+      id: n.id,
+      type: n.type,
+      label: n.label,
+      x: Math.round(n.x),
+      y: Math.round(n.y),
+      w: Math.round(n.w),
+      h: Math.round(n.h),
+    })),
+    edges: state.edges.map((e) => {
+      const obj = { from: e.from, to: e.to, number: e.number };
+      if (e.lineStyle && e.lineStyle !== 'solid') obj.lineStyle = e.lineStyle;
+      if (e.arrowStyle && e.arrowStyle !== 'end') obj.arrowStyle = e.arrowStyle;
+      if (e.protocol) obj.protocol = e.protocol;
+      return obj;
+    }),
+  };
+}
+
+function exportYAMLFile() {
+  const yaml = stringifyYAML(diagramToYAMLObject());
+  const blob = new Blob([yaml], { type: 'application/x-yaml' });
+  downloadBlob(blob, 'architecture-diagram.yaml');
+}
+
+function importYAMLFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = parseYAML(reader.result);
+    } catch (e) {
+      alert('Could not read this file as YAML: ' + e.message);
+      return;
+    }
+    if (!data || !Array.isArray(data.nodes)) {
+      alert('This doesn’t look like an Archly diagram (no "nodes" list found).');
+      return;
+    }
+
+    const idMap = {};
+    const nodes = [];
+    let nid = 1;
+    for (const spec of data.nodes) {
+      const def = getComponent(spec.type);
+      if (!def) continue; // unknown component type — skip rather than fail the whole import
+      const w = spec.w || def.w || DEFAULT_NODE_W;
+      const h = spec.h || def.h || DEFAULT_NODE_H;
+      const node = {
+        id: nid,
+        type: def.id,
+        category: def.category,
+        label: spec.label || def.label,
+        icon: def.icon,
+        container: !!def.container,
+        textOnly: !!def.textOnly,
+        x: spec.x || 0,
+        y: spec.y || 0,
+        w,
+        h,
+      };
+      idMap[spec.id] = nid;
+      nodes.push(node);
+      nid++;
+    }
+
+    const edges = (data.edges || [])
+      .filter((e) => idMap[e.from] !== undefined && idMap[e.to] !== undefined)
+      .map((e, i) => ({
+        id: i + 1,
+        from: idMap[e.from],
+        to: idMap[e.to],
+        number: e.number || i + 1,
+        lineStyle: e.lineStyle || 'solid',
+        arrowStyle: e.arrowStyle || 'end',
+        protocol: e.protocol || null,
+      }));
+
+    if (state.nodes.length && !confirm('Replace the current diagram with the imported one? This cannot be undone.')) return;
+    loadDiagram(nodes, edges, nid, edges.length + 1);
+  };
+  reader.onerror = () => alert('Could not read the selected file.');
+  reader.readAsText(file);
+}

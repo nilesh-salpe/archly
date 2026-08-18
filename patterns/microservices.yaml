@@ -1,0 +1,94 @@
+id: microservices
+name: Microservices + API Gateway
+title: Microservices with API Gateway
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: apigw
+    type: apigw
+    x: 300
+    y: 340
+  - id: auth
+    type: auth
+    x: 300
+    y: 130
+  - id: ratelimiter
+    type: ratelimiter
+    x: 300
+    y: 560
+    label: Rate Limiter
+  - id: svcA
+    type: instance
+    x: 620
+    y: 100
+    label: Orders Service
+  - id: svcB
+    type: instance
+    x: 620
+    y: 340
+    label: Catalog Service
+  - id: svcC
+    type: instance
+    x: 620
+    y: 580
+    label: Search Service
+  - id: mongo
+    type: mongodb
+    x: 920
+    y: 100
+  - id: cassandra
+    type: cassandra
+    x: 920
+    y: 340
+  - id: vectordb
+    type: vectordb
+    x: 920
+    y: 580
+  - id: eventbus
+    type: eventbus
+    x: 1180
+    y: 100
+    label: Order Events
+  - id: metrics
+    type: metrics
+    x: 60
+    y: 130
+edges:
+  - from: user
+    to: apigw
+    number: 1
+  - from: apigw
+    to: auth
+    number: 2
+  - from: apigw
+    to: ratelimiter
+    number: 3
+  - from: apigw
+    to: svcA
+    number: 4
+  - from: apigw
+    to: svcB
+    number: 5
+  - from: apigw
+    to: svcC
+    number: 6
+  - from: svcA
+    to: mongo
+    number: 7
+  - from: svcB
+    to: cassandra
+    number: 8
+  - from: svcC
+    to: vectordb
+    number: 9
+  - from: svcA
+    to: eventbus
+    number: 10
+    lineStyle: dashed
+  - from: apigw
+    to: metrics
+    number: 11
+    lineStyle: dotted
+    arrowStyle: none

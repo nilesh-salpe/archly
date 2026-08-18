@@ -56,6 +56,9 @@
 
         <button id="btn-export-png" class="btn" title="Export the diagram as a PNG image">Export PNG</button>
         <button id="btn-export-svg" class="btn" title="Export the diagram as an SVG image">Export SVG</button>
+        <button id="btn-export-yaml" class="btn" title="Export the diagram as a YAML file">Export YAML</button>
+        <button id="btn-import-yaml" class="btn" title="Import a diagram from a YAML file">Import YAML</button>
+        <input type="file" id="import-yaml-input" accept=".yaml,.yml" style="display:none" />
       </div>
     </header>
 
@@ -63,6 +66,7 @@
       <aside class="palette" id="palette">
         <!-- populated by app.js from COMPONENTS -->
       </aside>
+      <button id="btn-palette-tab" class="palette-tab" title="Show or hide the component palette">&laquo;</button>
 
       <main class="canvas-wrap" id="canvas-wrap">
         <div class="ruler-corner"></div>
@@ -90,6 +94,7 @@
   </div>
 
   <script src="js/components.js"></script>
+  <script src="js/yaml.js"></script>
   <script src="js/canvas.js"></script>
   <script src="js/arrows.js"></script>
   <script src="js/animate.js"></script>

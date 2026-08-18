@@ -133,9 +133,36 @@ html, body {
   width: 250px;
   flex-shrink: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   background: var(--chrome-bg);
   border-right: 1px solid var(--chrome-border);
   padding: 10px;
+  transition: width 0.18s ease, padding 0.18s ease, border-color 0.18s ease;
+}
+
+.palette.palette-hidden {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-right-color: transparent;
+}
+
+.palette-tab {
+  flex-shrink: 0;
+  width: 14px;
+  border: none;
+  border-right: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.palette-tab:hover {
+  background: var(--bg);
+  color: var(--text);
 }
 
 .palette-category {
@@ -143,12 +170,29 @@ html, body {
 }
 
 .palette-category h3 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
   margin: 6px 4px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
 }
+
+.palette-category h3:hover { color: var(--text); }
+
+.cat-chevron {
+  display: inline-block;
+  font-size: 9px;
+  transition: transform 0.15s ease;
+}
+
+.palette-category.collapsed .cat-chevron { transform: rotate(-90deg); }
+.palette-category.collapsed .palette-items { display: none; }
 
 .palette-item {
   display: flex;

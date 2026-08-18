@@ -1,0 +1,61 @@
+id: cache-aside
+name: Cache-Aside
+title: Cache-Aside with Resilience
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: elb
+    type: elb
+    x: 300
+    y: 340
+  - id: ratelimiter
+    type: ratelimiter
+    x: 300
+    y: 130
+    label: Rate Limiter
+  - id: instance
+    type: instance
+    x: 560
+    y: 340
+  - id: redis
+    type: redis
+    x: 560
+    y: 130
+  - id: circuitbreaker
+    type: circuitbreaker
+    x: 820
+    y: 340
+    label: Circuit Breaker
+  - id: sqldb
+    type: sqldb
+    x: 1060
+    y: 340
+  - id: readreplica
+    type: readreplica
+    x: 1060
+    y: 540
+edges:
+  - from: user
+    to: elb
+    number: 1
+  - from: elb
+    to: ratelimiter
+    number: 2
+  - from: ratelimiter
+    to: instance
+    number: 3
+  - from: instance
+    to: redis
+    number: 4
+  - from: instance
+    to: circuitbreaker
+    number: 5
+  - from: circuitbreaker
+    to: sqldb
+    number: 6
+  - from: sqldb
+    to: readreplica
+    number: 7
+    lineStyle: dashed

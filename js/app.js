@@ -27,11 +27,15 @@ function buildPalette() {
     if (!items) continue;
 
     const section = document.createElement('div');
-    section.className = 'palette-category';
+    section.className = 'palette-category collapsed'; // groups start minimized
 
     const heading = document.createElement('h3');
-    heading.textContent = CATEGORY_LABELS[cat];
+    heading.innerHTML = `<span class="cat-chevron">&#9662;</span>${CATEGORY_LABELS[cat]}`;
+    heading.addEventListener('click', () => section.classList.toggle('collapsed'));
     section.appendChild(heading);
+
+    const list = document.createElement('div');
+    list.className = 'palette-items';
 
     for (const comp of items) {
       const item = document.createElement('div');
@@ -49,9 +53,10 @@ function buildPalette() {
         ev.dataTransfer.effectAllowed = 'copy';
       });
 
-      section.appendChild(item);
+      list.appendChild(item);
     }
 
+    section.appendChild(list);
     paletteEl.appendChild(section);
   }
 }
@@ -77,12 +82,15 @@ function wireToolbar() {
     clearDiagram();
   });
 
+  document.getElementById('btn-palette-tab').addEventListener('click', togglePalette);
+
   document.getElementById('btn-view').addEventListener('click', (ev) => {
     ev.stopPropagation();
     const rect = ev.currentTarget.getBoundingClientRect();
     showContextMenu(rect.left, rect.bottom + 4, [
       { label: (showGrid ? '✓ ' : '   ') + 'Grid Background', action: toggleGrid },
       { label: (showRulers ? '✓ ' : '   ') + 'Rulers', action: toggleRulers },
+      { label: (showPalette ? '✓ ' : '   ') + 'Palette', action: togglePalette },
     ]);
   });
 
@@ -147,9 +155,19 @@ function wireToolbar() {
 
   document.getElementById('btn-export-png').addEventListener('click', exportPNGFile);
   document.getElementById('btn-export-svg').addEventListener('click', exportSVGFile);
+  document.getElementById('btn-export-yaml').addEventListener('click', exportYAMLFile);
+
+  const importInput = document.getElementById('import-yaml-input');
+  document.getElementById('btn-import-yaml').addEventListener('click', () => importInput.click());
+  importInput.addEventListener('change', (ev) => {
+    const file = ev.target.files[0];
+    if (file) importYAMLFile(file);
+    ev.target.value = '';
+  });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadPatternDefinitions();
   buildPalette();
   buildPatternSelect();
   wireToolbar();

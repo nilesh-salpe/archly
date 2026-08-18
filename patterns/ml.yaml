@@ -1,0 +1,70 @@
+id: ml
+name: Machine Learning
+title: "Machine Learning: Training & Serving"
+nodes:
+  - id: dataset
+    type: dataset
+    x: 60
+    y: 120
+  - id: workflow
+    type: workflow
+    x: 320
+    y: 120
+    label: Training Pipeline
+  - id: gpucluster
+    type: gpucluster
+    x: 580
+    y: 120
+  - id: modelregistry
+    type: modelregistry
+    x: 840
+    y: 120
+  - id: user
+    type: user
+    x: 60
+    y: 420
+  - id: elb
+    type: elb
+    x: 320
+    y: 420
+  - id: instance
+    type: instance
+    x: 580
+    y: 420
+    label: Inference Service
+  - id: featurestore
+    type: featurestore
+    x: 840
+    y: 420
+  - id: metrics
+    type: metrics
+    x: 1100
+    y: 420
+    label: Model Monitoring
+edges:
+  - from: dataset
+    to: workflow
+    number: 1
+  - from: workflow
+    to: gpucluster
+    number: 2
+  - from: gpucluster
+    to: modelregistry
+    number: 3
+  - from: user
+    to: elb
+    number: 4
+  - from: elb
+    to: instance
+    number: 5
+  - from: instance
+    to: featurestore
+    number: 6
+  - from: instance
+    to: modelregistry
+    number: 7
+  - from: instance
+    to: metrics
+    number: 8
+    lineStyle: dotted
+    arrowStyle: none

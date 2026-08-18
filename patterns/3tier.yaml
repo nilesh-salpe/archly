@@ -1,0 +1,74 @@
+id: 3tier
+name: 3-Tier Web App
+title: 3-Tier Web Application
+nodes:
+  - id: az
+    type: az
+    x: 270
+    y: 320
+    w: 970
+    h: 160
+    label: Availability Zone
+  - id: user
+    type: user
+    x: 60
+    y: 330
+  - id: dns
+    type: dns
+    x: 60
+    y: 130
+  - id: cdn
+    type: cdn
+    x: 300
+    y: 130
+  - id: waf
+    type: waf
+    x: 300
+    y: 360
+  - id: elb
+    type: elb
+    x: 540
+    y: 360
+  - id: instance
+    type: instance
+    x: 780
+    y: 360
+  - id: cache
+    type: cache
+    x: 780
+    y: 160
+    label: Session Cache
+  - id: sqldb
+    type: sqldb
+    x: 1020
+    y: 360
+  - id: readreplica
+    type: readreplica
+    x: 1020
+    y: 560
+edges:
+  - from: user
+    to: dns
+    number: 1
+  - from: user
+    to: cdn
+    number: 2
+  - from: user
+    to: waf
+    number: 3
+  - from: waf
+    to: elb
+    number: 4
+  - from: elb
+    to: instance
+    number: 5
+  - from: instance
+    to: cache
+    number: 6
+  - from: instance
+    to: sqldb
+    number: 7
+  - from: sqldb
+    to: readreplica
+    number: 8
+    lineStyle: dashed

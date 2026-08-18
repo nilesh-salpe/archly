@@ -172,6 +172,7 @@ function loadState() {
 const PREFS_KEY = 'cad_prefs_v1';
 let showGrid = true;
 let showRulers = false;
+let showPalette = true;
 
 function loadPrefs() {
   try {
@@ -180,6 +181,7 @@ function loadPrefs() {
     const p = JSON.parse(raw);
     if (typeof p.showGrid === 'boolean') showGrid = p.showGrid;
     if (typeof p.showRulers === 'boolean') showRulers = p.showRulers;
+    if (typeof p.showPalette === 'boolean') showPalette = p.showPalette;
   } catch (e) {
     /* ignore */
   }
@@ -187,7 +189,7 @@ function loadPrefs() {
 
 function savePrefs() {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ showGrid, showRulers }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ showGrid, showRulers, showPalette }));
   } catch (e) {
     /* ignore */
   }
@@ -196,6 +198,10 @@ function savePrefs() {
 function applyViewPrefs() {
   canvasWrap.classList.toggle('no-grid', !showGrid);
   canvasWrap.classList.toggle('rulers-on', showRulers);
+  const paletteEl = document.getElementById('palette');
+  if (paletteEl) paletteEl.classList.toggle('palette-hidden', !showPalette);
+  const tabBtn = document.getElementById('btn-palette-tab');
+  if (tabBtn) tabBtn.innerHTML = showPalette ? '&laquo;' : '&raquo;';
   updateRulers();
 }
 
@@ -207,6 +213,12 @@ function toggleGrid() {
 
 function toggleRulers() {
   showRulers = !showRulers;
+  applyViewPrefs();
+  savePrefs();
+}
+
+function togglePalette() {
+  showPalette = !showPalette;
   applyViewPrefs();
   savePrefs();
 }
