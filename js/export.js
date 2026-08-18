@@ -41,7 +41,7 @@ const EXPORT_STYLE = `
 function buildExportSVG() {
   const bbox = computeContentBBox();
   const clone = svg.cloneNode(true);
-  clone.querySelectorAll('.no-export, .handle, .resize-handle, .label-hit').forEach((elx) => elx.remove());
+  clone.querySelectorAll('.no-export, .handle, .resize-handle, .label-hit, .edge-hit').forEach((elx) => elx.remove());
   clone.querySelectorAll('.selected').forEach((elx) => elx.classList.remove('selected'));
   clone.querySelectorAll('.flow-active').forEach((elx) => elx.classList.remove('flow-active'));
 
@@ -89,19 +89,28 @@ function exportSVGFile() {
 
 function exportPNGFile() {
   const { svgEl, bbox } = buildExportSVG();
+  const scale = 2; // export at 2x for crisper output
+
+  // Set the SVG's own width/height (not just the canvas) to the 2x target so
+  // the browser's SVG rasterizer renders at full resolution natively. Doing
+  // the upscale via ctx.scale() instead — rasterizing once at 1x, then
+  // stretching — produced visible anti-aliasing artifacts (a solid dark fill
+  // between two closely-spaced parallel curves) that aren't in the source
+  // SVG at all; this keeps the rasterizer's own anti-aliasing math correct.
+  svgEl.setAttribute('width', bbox.w * scale);
+  svgEl.setAttribute('height', bbox.h * scale);
+
   const xml = serializeSVG(svgEl);
   const svg64 = btoa(unescape(encodeURIComponent(xml)));
   const dataUrl = 'data:image/svg+xml;base64,' + svg64;
 
   const img = new Image();
   img.onload = () => {
-    const scale = 2; // export at 2x for crisper output
     const canvas = document.createElement('canvas');
     canvas.width = bbox.w * scale;
     canvas.height = bbox.h * scale;
     const ctx = canvas.getContext('2d');
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     canvas.toBlob((blob) => downloadBlob(blob, 'architecture-diagram.png'), 'image/png');
   };
   img.src = dataUrl;
