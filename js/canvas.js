@@ -265,6 +265,7 @@ function renderAll() {
 
 function updateToolbarState() {
   const hasNode = !!(state.selected && state.selected.kind === 'node');
+  const hasEdge = !!(state.selected && state.selected.kind === 'edge');
   const hasSelection = !!state.selected;
   setBtnDisabled('btn-copy', !hasNode);
   setBtnDisabled('btn-duplicate', !hasNode);
@@ -272,6 +273,8 @@ function updateToolbarState() {
   setBtnDisabled('btn-back', !hasNode);
   setBtnDisabled('btn-delete', !hasSelection);
   setBtnDisabled('btn-paste', !clipboardNode);
+  setBtnDisabled('btn-linestyle', !hasEdge);
+  setBtnDisabled('btn-arrowstyle', !hasEdge);
 }
 
 function setBtnDisabled(id, disabled) {

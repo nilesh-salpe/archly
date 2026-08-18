@@ -105,6 +105,46 @@ function wireToolbar() {
   });
   document.getElementById('btn-delete').addEventListener('click', deleteSelected);
 
+  document.getElementById('btn-linestyle').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (!state.selected || state.selected.kind !== 'edge') return;
+    const edge = state.edges.find((e) => e.id === state.selected.id);
+    if (!edge) return;
+    const rect = ev.currentTarget.getBoundingClientRect();
+    showContextMenu(
+      rect.left,
+      rect.bottom + 4,
+      LINE_STYLE_OPTIONS.map((opt) => ({
+        label: ((edge.lineStyle || 'solid') === opt.key ? '✓ ' : '   ') + opt.label,
+        action: () => {
+          edge.lineStyle = opt.key;
+          renderAll();
+          saveState();
+        },
+      }))
+    );
+  });
+
+  document.getElementById('btn-arrowstyle').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (!state.selected || state.selected.kind !== 'edge') return;
+    const edge = state.edges.find((e) => e.id === state.selected.id);
+    if (!edge) return;
+    const rect = ev.currentTarget.getBoundingClientRect();
+    showContextMenu(
+      rect.left,
+      rect.bottom + 4,
+      ARROW_STYLE_OPTIONS.map((opt) => ({
+        label: ((edge.arrowStyle || 'end') === opt.key ? '✓ ' : '   ') + opt.label,
+        action: () => {
+          edge.arrowStyle = opt.key;
+          renderAll();
+          saveState();
+        },
+      }))
+    );
+  });
+
   document.getElementById('btn-export-png').addEventListener('click', exportPNGFile);
   document.getElementById('btn-export-svg').addEventListener('click', exportSVGFile);
 }
