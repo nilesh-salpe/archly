@@ -34,6 +34,8 @@ const EXPORT_STYLE = `
   .arrowhead-path { fill: #64748b; }
   .edge-badge circle { fill: #ffffff; stroke: #64748b; stroke-width: 1.5; }
   .edge-badge text { fill: #334155; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+  .edge-protocol rect { fill: #ffffff; stroke: #94a3b8; stroke-width: 1; }
+  .edge-protocol text { fill: #475569; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
 `;
 
 function buildExportSVG() {

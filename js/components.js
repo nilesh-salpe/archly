@@ -106,6 +106,7 @@ const ICONS = {
   eventbus: `<path d="M2 12h20"/><circle cx="6" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.8" fill="currentColor" stroke="none"/><path d="M6 12V6M12 12V6M18 12V6" fill="none"/>`,
   websocket: `<path d="M4 8l4-4 4 4M8 4v9" fill="none"/><path d="M20 16l-4 4-4-4M16 20v-9" fill="none"/>`,
   rabbitmq: `<circle cx="12" cy="14" r="6"/><path d="M8 8l-1-5 4 3M16 8l1-5-4 3" fill="none"/>`,
+  sse: `<circle cx="7" cy="12" r="2"/><path d="M12.5 8.5a5 5 0 0 1 0 7M16 5.5a9 9 0 0 1 0 13" fill="none"/>`,
   // Cache
   cache: `<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M13 7l-4 6h3l-1 4 5-7h-3z" fill="currentColor" stroke="none"/>`,
   redis: `<ellipse cx="12" cy="7" rx="7.5" ry="2.8"/><path d="M4.5 7v10c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8V7"/><path d="M8 12.3l2.4 1.3 2.4-1.3" fill="none"/>`,
@@ -217,6 +218,7 @@ const COMPONENTS = [
   { id: 'eventbus', category: 'communication', label: 'Event Bus', icon: 'eventbus' },
   { id: 'websocket', category: 'communication', label: 'WebSocket', icon: 'websocket' },
   { id: 'rabbitmq', category: 'communication', label: 'RabbitMQ', icon: 'rabbitmq' },
+  { id: 'sse', category: 'communication', label: 'SSE', icon: 'sse' },
   // Cache
   { id: 'cache', category: 'cache', label: 'Cache', icon: 'cache' },
   { id: 'redis', category: 'cache', label: 'Redis', icon: 'redis' },

@@ -315,6 +315,95 @@ function renderContainerNode(n) {
   return g;
 }
 
+// ---------- Label text wrapping ----------
+// SVG has no native text-wrap, so labels that don't fit their box are
+// word-wrapped (falling back to a hard character break for a single
+// over-long word) using a canvas 2D context for accurate width measurement.
+
+let measureCtx = null;
+
+function fontString(fontSize, fontWeight) {
+  return `${fontWeight} ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+}
+
+function wrapText(text, maxWidth, fontSize, fontWeight) {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = fontString(fontSize, fontWeight);
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [''];
+
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    if (!current && measureCtx.measureText(word).width > maxWidth) {
+      // A single word longer than the box — hard-break it by character.
+      let piece = '';
+      for (const ch of word) {
+        if (piece && measureCtx.measureText(piece + ch).width > maxWidth) {
+          lines.push(piece);
+          piece = ch;
+        } else {
+          piece += ch;
+        }
+      }
+      current = piece;
+      continue;
+    }
+    const test = current ? `${current} ${word}` : word;
+    if (measureCtx.measureText(test).width <= maxWidth) {
+      current = test;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+// Wraps then clamps to maxLines, ellipsizing the last visible line — used for
+// icon+label cards, which have a fixed height and can't grow with content.
+function wrapClamped(text, maxWidth, maxLines, fontSize, fontWeight) {
+  const lines = wrapText(text, maxWidth, fontSize, fontWeight);
+  if (lines.length <= maxLines) return lines;
+  const clamped = lines.slice(0, maxLines);
+  let last = clamped[maxLines - 1];
+  while (last.length > 0 && measureCtx.measureText(last + '…').width > maxWidth) {
+    last = last.slice(0, -1);
+  }
+  clamped[maxLines - 1] = last + '…';
+  return clamped;
+}
+
+function buildMultilineText(cls, cx, lastLineY, lines, lineHeight) {
+  const startY = lastLineY - (lines.length - 1) * lineHeight;
+  const text = el('text', { class: cls, x: cx, y: startY });
+  lines.forEach((line, i) => {
+    text.appendChild(el('tspan', { x: cx, dy: i === 0 ? 0 : lineHeight }, textNode(line)));
+  });
+  return text;
+}
+
+function buildRegularLabel(n) {
+  const lines = wrapClamped(n.label, n.w - 16, 2, 12, 500);
+  return buildMultilineText('node-label', n.w / 2, n.h - 12, lines, 13);
+}
+
+function buildTextOnlyLabel(n) {
+  const lines = wrapText(n.label, n.w - 16, 16, 600);
+  const lineHeight = 20;
+  const lastLineY = n.h / 2 + 5 + ((lines.length - 1) * lineHeight) / 2;
+  return buildMultilineText('node-label text-node-label', n.w / 2, lastLineY, lines, lineHeight);
+}
+
+// Text-only nodes have no manual resize handle, so their box grows to fit
+// wrapped content instead — called whenever a text-only node's label changes.
+function recomputeTextOnlyHeight(n) {
+  if (!n.textOnly) return;
+  const lines = wrapText(n.label, n.w - 16, 16, 600);
+  n.h = Math.max(44, lines.length * 20 + 20);
+}
+
 function renderRegularNode(n) {
   const g = el('g', { class: 'node', 'data-node-id': n.id, transform: `translate(${n.x},${n.y})` });
   if (state.selected && state.selected.kind === 'node' && state.selected.id === n.id) g.classList.add('selected');
@@ -344,12 +433,7 @@ function renderRegularNode(n) {
     iconG.innerHTML = ICONS[n.icon] || '';
   }
 
-  const labelY = n.textOnly ? n.h / 2 + 5 : n.h - 12;
-  const label = el(
-    'text',
-    { class: 'node-label' + (n.textOnly ? ' text-node-label' : ''), x: n.w / 2, y: labelY },
-    textNode(n.label)
-  );
+  const label = n.textOnly ? buildTextOnlyLabel(n) : buildRegularLabel(n);
 
   // Text hit-testing in SVG only registers clicks on painted glyph ink, not
   // the full label area, so an invisible rect is the reliable click target
@@ -385,13 +469,15 @@ function renderRegularNode(n) {
 
 function openLabelEditor(node, labelEl) {
   const rect = labelEl.getBoundingClientRect();
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'name-editor';
+  const multiline = !!node.textOnly;
+  const input = document.createElement(multiline ? 'textarea' : 'input');
+  if (!multiline) input.type = 'text';
+  input.className = 'name-editor' + (multiline ? ' name-editor-multiline' : '');
   input.value = node.label;
   input.style.left = `${rect.left - 6}px`;
   input.style.top = `${rect.top - 4}px`;
   input.style.width = `${Math.max(70, rect.width + 24)}px`;
+  if (multiline) input.style.height = `${Math.max(40, rect.height + 16)}px`;
   document.body.appendChild(input);
   input.focus();
   input.select();
@@ -402,6 +488,43 @@ function openLabelEditor(node, labelEl) {
     done = true;
     const v = input.value.trim();
     if (v) node.label = v;
+    recomputeTextOnlyHeight(node);
+    input.remove();
+    renderAll();
+    saveState();
+  };
+  const cancel = () => {
+    if (done) return;
+    done = true;
+    input.remove();
+  };
+
+  input.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && (!multiline || ev.metaKey || ev.ctrlKey)) commit();
+    if (ev.key === 'Escape') cancel();
+  });
+  input.addEventListener('blur', commit);
+}
+
+function openProtocolEditor(edge, clientX, clientY) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'name-editor';
+  input.placeholder = 'e.g. REST, gRPC';
+  input.value = edge.protocol || '';
+  input.style.left = `${clientX - 50}px`;
+  input.style.top = `${clientY - 11}px`;
+  input.style.width = '110px';
+  document.body.appendChild(input);
+  input.focus();
+  input.select();
+
+  let done = false;
+  const commit = () => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    edge.protocol = v || null;
     input.remove();
     renderAll();
     saveState();
@@ -474,6 +597,20 @@ function renderEdge(e) {
   g.appendChild(path);
   g.appendChild(hit);
   g.appendChild(badge);
+
+  if (e.protocol) {
+    const lp = geo.labelPos;
+    const w = Math.max(30, e.protocol.length * 6.5 + 12);
+    const chip = el('g', { class: 'edge-protocol', transform: `translate(${lp.x},${lp.y})` });
+    chip.appendChild(el('rect', { x: -w / 2, y: -9, width: w, height: 18, rx: 4 }));
+    chip.appendChild(el('text', { x: 0, y: 1 }, textNode(e.protocol)));
+    chip.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openProtocolEditor(e, ev.clientX, ev.clientY);
+    });
+    g.appendChild(chip);
+  }
+
   return g;
 }
 
@@ -819,6 +956,7 @@ const ARROW_STYLE_OPTIONS = [
   { key: 'both', label: 'Both Ends' },
   { key: 'none', label: 'No Arrowhead' },
 ];
+const PROTOCOL_PRESETS = ['REST', 'gRPC', 'GraphQL', 'Async'];
 
 function onEdgeContextMenu(ev, e) {
   ev.preventDefault();
@@ -845,6 +983,30 @@ function onEdgeContextMenu(ev, e) {
       label: (active ? '✓ ' : '   ') + opt.label,
       action: () => {
         e.arrowStyle = opt.key;
+        renderAll();
+        saveState();
+      },
+    });
+  }
+  items.push('-');
+  items.push({ label: 'Protocol Label', heading: true });
+  for (const p of PROTOCOL_PRESETS) {
+    const active = e.protocol === p;
+    items.push({
+      label: (active ? '✓ ' : '   ') + p,
+      action: () => {
+        e.protocol = p;
+        renderAll();
+        saveState();
+      },
+    });
+  }
+  items.push({ label: '   Custom…', action: () => openProtocolEditor(e, ev.clientX, ev.clientY) });
+  if (e.protocol) {
+    items.push({
+      label: '   Clear Label',
+      action: () => {
+        e.protocol = null;
         renderAll();
         saveState();
       },

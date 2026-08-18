@@ -43,21 +43,26 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
   const mx = (start.x + end.x) / 2;
   const my = (start.y + end.y) / 2;
 
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+
   let d, badge;
   if (bend === 0) {
     d = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
     badge = { x: mx, y: my };
   } else {
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len;
-    const ny = dx / len;
     const cx = mx + nx * bend;
     const cy = my + ny * bend;
     d = `M ${start.x} ${start.y} Q ${cx} ${cy} ${end.x} ${end.y}`;
     badge = { x: cx, y: cy };
   }
 
-  return { start, end, d, badge };
+  // Where an optional protocol label (e.g. "REST", "gRPC") sits — further out
+  // along the same perpendicular as the badge, so it clears the number badge.
+  const labelPos = { x: badge.x + nx * 20, y: badge.y + ny * 20 };
+
+  return { start, end, d, badge, labelPos };
 }
