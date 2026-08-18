@@ -92,6 +92,8 @@ function loadPattern(id) {
     number: e.number,
     lineStyle: e.lineStyle || 'solid',
     arrowStyle: e.arrowStyle || 'end',
+    curve: typeof e.curve === 'number' ? e.curve : undefined,
+    routing: e.routing === 'orthogonal' ? 'orthogonal' : undefined,
   }));
 
   loadDiagram(nodes, edges, nid, edges.length + 1);

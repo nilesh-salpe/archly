@@ -12,6 +12,19 @@ function computeContentBBox() {
     maxX = Math.max(maxX, n.x + n.w);
     maxY = Math.max(maxY, n.y + n.h);
   }
+  // A curved edge's control point (where its number badge — and protocol
+  // label, if any — sits) can bulge outside the nodes' own bounding box, so
+  // widen the box to include those or they'd get clipped out of the export.
+  for (const e of state.edges) {
+    const geo = computeEdgeGeometry(e, state.edges, state.nodes);
+    if (!geo) continue;
+    for (const p of [geo.badge, geo.labelPos]) {
+      minX = Math.min(minX, p.x - 20);
+      minY = Math.min(minY, p.y - 20);
+      maxX = Math.max(maxX, p.x + 20);
+      maxY = Math.max(maxY, p.y + 20);
+    }
+  }
   return {
     x: minX - pad,
     y: minY - pad,
@@ -138,6 +151,8 @@ function diagramToYAMLObject() {
       if (e.lineStyle && e.lineStyle !== 'solid') obj.lineStyle = e.lineStyle;
       if (e.arrowStyle && e.arrowStyle !== 'end') obj.arrowStyle = e.arrowStyle;
       if (e.protocol) obj.protocol = e.protocol;
+      if (typeof e.curve === 'number' && e.curve !== 0) obj.curve = Math.round(e.curve);
+      if (e.routing === 'orthogonal') obj.routing = 'orthogonal';
       return obj;
     }),
   };
@@ -200,6 +215,8 @@ function importYAMLFile(file) {
         lineStyle: e.lineStyle || 'solid',
         arrowStyle: e.arrowStyle || 'end',
         protocol: e.protocol || null,
+        curve: typeof e.curve === 'number' ? e.curve : undefined,
+        routing: e.routing === 'orthogonal' ? 'orthogonal' : undefined,
       }));
 
     if (state.nodes.length && !confirm('Replace the current diagram with the imported one? This cannot be undone.')) return;

@@ -15,12 +15,16 @@ function buildPaletteIconSVG(comp) {
   return svgEl;
 }
 
+let paletteEntries = []; // {comp, itemEl, sectionEl} — built once, used by filterPalette()
+
 function buildPalette() {
   const paletteEl = document.getElementById('palette');
   const byCategory = {};
   for (const comp of COMPONENTS) {
     (byCategory[comp.category] = byCategory[comp.category] || []).push(comp);
   }
+
+  paletteEntries = [];
 
   for (const cat of Object.keys(CATEGORY_LABELS)) {
     const items = byCategory[cat];
@@ -54,10 +58,45 @@ function buildPalette() {
       });
 
       list.appendChild(item);
+      paletteEntries.push({ comp, itemEl: item, sectionEl: section });
     }
 
     section.appendChild(list);
     paletteEl.appendChild(section);
+  }
+}
+
+// Search filters items by label; a category auto-expands if it has a match
+// and hides entirely if it has none, collapsing back to the default
+// (all-minimized) state once the search box is cleared.
+function filterPalette(query) {
+  const q = query.trim().toLowerCase();
+  const sectionsSeen = new Set();
+
+  if (q === '') {
+    for (const { itemEl, sectionEl } of paletteEntries) {
+      itemEl.style.display = '';
+      sectionEl.style.display = '';
+      sectionEl.classList.add('collapsed');
+    }
+    return;
+  }
+
+  const sectionsWithMatch = new Set();
+  for (const { comp, itemEl, sectionEl } of paletteEntries) {
+    sectionsSeen.add(sectionEl);
+    const match = comp.label.toLowerCase().includes(q);
+    itemEl.style.display = match ? '' : 'none';
+    if (match) sectionsWithMatch.add(sectionEl);
+  }
+
+  for (const sectionEl of sectionsSeen) {
+    if (sectionsWithMatch.has(sectionEl)) {
+      sectionEl.style.display = '';
+      sectionEl.classList.remove('collapsed');
+    } else {
+      sectionEl.style.display = 'none';
+    }
   }
 }
 
@@ -102,67 +141,49 @@ function wireToolbar() {
     playState.speedMs = parseInt(ev.target.value, 10);
   });
 
-  document.getElementById('btn-copy').addEventListener('click', copySelectedNode);
-  document.getElementById('btn-paste').addEventListener('click', () => pasteNode());
-  document.getElementById('btn-duplicate').addEventListener('click', duplicateSelected);
-  document.getElementById('btn-front').addEventListener('click', () => {
-    if (state.selected && state.selected.kind === 'node') bringToFront(state.selected.id);
-  });
-  document.getElementById('btn-back').addEventListener('click', () => {
-    if (state.selected && state.selected.kind === 'node') sendToBack(state.selected.id);
-  });
-  document.getElementById('btn-delete').addEventListener('click', deleteSelected);
-
-  document.getElementById('btn-linestyle').addEventListener('click', (ev) => {
+  // Edit ▾ is context-sensitive: it shows exactly what right-clicking the
+  // current selection would show (same buildNodeMenuItems/buildEdgeMenuItems
+  // used by the canvas context menus), or just Paste if nothing's selected.
+  document.getElementById('btn-edit').addEventListener('click', (ev) => {
     ev.stopPropagation();
-    if (!state.selected || state.selected.kind !== 'edge') return;
-    const edge = state.edges.find((e) => e.id === state.selected.id);
-    if (!edge) return;
     const rect = ev.currentTarget.getBoundingClientRect();
-    showContextMenu(
-      rect.left,
-      rect.bottom + 4,
-      LINE_STYLE_OPTIONS.map((opt) => ({
-        label: ((edge.lineStyle || 'solid') === opt.key ? '✓ ' : '   ') + opt.label,
-        action: () => {
-          edge.lineStyle = opt.key;
-          renderAll();
-          saveState();
-        },
-      }))
-    );
+    const x = rect.left;
+    const y = rect.bottom + 4;
+    if (state.selected && state.selected.kind === 'node') {
+      const node = nodeById(state.selected.id);
+      if (node) showContextMenu(x, y, buildNodeMenuItems(node));
+      return;
+    }
+    if (state.selected && state.selected.kind === 'edge') {
+      const edge = state.edges.find((e) => e.id === state.selected.id);
+      if (edge) showContextMenu(x, y, buildEdgeMenuItems(edge, x, y));
+      return;
+    }
+    if (clipboardNode) showContextMenu(x, y, [{ label: 'Paste', action: () => pasteNode() }]);
   });
 
-  document.getElementById('btn-arrowstyle').addEventListener('click', (ev) => {
+  document.getElementById('btn-file').addEventListener('click', (ev) => {
     ev.stopPropagation();
-    if (!state.selected || state.selected.kind !== 'edge') return;
-    const edge = state.edges.find((e) => e.id === state.selected.id);
-    if (!edge) return;
     const rect = ev.currentTarget.getBoundingClientRect();
-    showContextMenu(
-      rect.left,
-      rect.bottom + 4,
-      ARROW_STYLE_OPTIONS.map((opt) => ({
-        label: ((edge.arrowStyle || 'end') === opt.key ? '✓ ' : '   ') + opt.label,
-        action: () => {
-          edge.arrowStyle = opt.key;
-          renderAll();
-          saveState();
-        },
-      }))
-    );
+    showContextMenu(rect.left, rect.bottom + 4, [
+      { label: 'Export', heading: true },
+      { label: '   PNG Image', action: exportPNGFile },
+      { label: '   SVG Image', action: exportSVGFile },
+      { label: '   YAML', action: exportYAMLFile },
+      '-',
+      { label: 'Import YAML…', action: () => document.getElementById('import-yaml-input').click() },
+    ]);
   });
-
-  document.getElementById('btn-export-png').addEventListener('click', exportPNGFile);
-  document.getElementById('btn-export-svg').addEventListener('click', exportSVGFile);
-  document.getElementById('btn-export-yaml').addEventListener('click', exportYAMLFile);
 
   const importInput = document.getElementById('import-yaml-input');
-  document.getElementById('btn-import-yaml').addEventListener('click', () => importInput.click());
   importInput.addEventListener('change', (ev) => {
     const file = ev.target.files[0];
     if (file) importYAMLFile(file);
     ev.target.value = '';
+  });
+
+  document.getElementById('palette-search').addEventListener('input', (ev) => {
+    filterPalette(ev.target.value);
   });
 }
 

@@ -276,17 +276,9 @@ function renderAll() {
 }
 
 function updateToolbarState() {
-  const hasNode = !!(state.selected && state.selected.kind === 'node');
-  const hasEdge = !!(state.selected && state.selected.kind === 'edge');
-  const hasSelection = !!state.selected;
-  setBtnDisabled('btn-copy', !hasNode);
-  setBtnDisabled('btn-duplicate', !hasNode);
-  setBtnDisabled('btn-front', !hasNode);
-  setBtnDisabled('btn-back', !hasNode);
-  setBtnDisabled('btn-delete', !hasSelection);
-  setBtnDisabled('btn-paste', !clipboardNode);
-  setBtnDisabled('btn-linestyle', !hasEdge);
-  setBtnDisabled('btn-arrowstyle', !hasEdge);
+  // Edit ▾ shows a node/edge menu when something's selected, or just Paste
+  // when there's clipboard content to offer — disabled only when neither applies.
+  setBtnDisabled('btn-edit', !state.selected && !clipboardNode);
 }
 
 function setBtnDisabled(id, disabled) {
@@ -599,10 +591,7 @@ function renderEdge(e) {
   const numText = el('text', { x: 0, y: 1 }, textNode(String(e.number)));
   badge.appendChild(numText);
 
-  hit.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    selectItem('edge', e.id);
-  });
+  hit.addEventListener('pointerdown', (ev) => startEdgeBend(ev, e));
   hit.addEventListener('contextmenu', (ev) => onEdgeContextMenu(ev, e));
   badge.addEventListener('click', (ev) => {
     ev.stopPropagation();
@@ -817,6 +806,48 @@ function findNodeAtPoint(clientX, clientY, excludeId) {
   return null;
 }
 
+// ---------- Edge bending (drag anywhere along the line to curve it) ----------
+// Grabbing the edge's hit-path and moving the pointer bends the curve so its
+// control point tracks the cursor (draw.io-style — no separate fixed handle).
+// A short drag threshold tells a genuine bend apart from a plain click, which
+// still selects the edge as before.
+
+let edgeBendCtx = null;
+
+function startEdgeBend(ev, edge) {
+  ev.stopPropagation();
+  if (edge.routing === 'orthogonal') {
+    selectItem('edge', edge.id); // orthogonal edges auto-route — nothing to drag
+    return;
+  }
+  edgeBendCtx = { edge, startClient: { x: ev.clientX, y: ev.clientY }, moved: false };
+  window.addEventListener('pointermove', onEdgeBendMove);
+  window.addEventListener('pointerup', onEdgeBendUp);
+}
+
+function onEdgeBendMove(ev) {
+  if (!edgeBendCtx) return;
+  const dx = ev.clientX - edgeBendCtx.startClient.x;
+  const dy = ev.clientY - edgeBendCtx.startClient.y;
+  if (!edgeBendCtx.moved && Math.hypot(dx, dy) > 4) edgeBendCtx.moved = true;
+  if (!edgeBendCtx.moved) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  edgeBendCtx.edge.curve = computeBendFromPoint(edgeBendCtx.edge, state.nodes, p);
+  renderAll();
+}
+
+function onEdgeBendUp() {
+  window.removeEventListener('pointermove', onEdgeBendMove);
+  window.removeEventListener('pointerup', onEdgeBendUp);
+  if (!edgeBendCtx) return;
+  if (edgeBendCtx.moved) {
+    saveState();
+  } else {
+    selectItem('edge', edgeBendCtx.edge.id); // no drag happened — treat as a plain click
+  }
+  edgeBendCtx = null;
+}
+
 // ---------- Selection & deletion ----------
 
 function selectItem(kind, id) {
@@ -944,12 +975,8 @@ function showContextMenu(clientX, clientY, items) {
   menu.style.top = `${top}px`;
 }
 
-function onNodeContextMenu(ev, n) {
-  ev.preventDefault();
-  ev.stopPropagation();
-  selectItem('node', n.id);
-
-  showContextMenu(ev.clientX, ev.clientY, [
+function buildNodeMenuItems(n) {
+  return [
     { label: 'Rename', action: () => openRename(n) },
     { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
     { label: 'Copy    ⌘C', action: () => copySelectedNode() },
@@ -958,7 +985,14 @@ function onNodeContextMenu(ev, n) {
     { label: 'Send to Back    [', action: () => sendToBack(n.id) },
     '-',
     { label: 'Delete', action: () => deleteSelected() },
-  ]);
+  ];
+}
+
+function onNodeContextMenu(ev, n) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  selectItem('node', n.id);
+  showContextMenu(ev.clientX, ev.clientY, buildNodeMenuItems(n));
 }
 
 const LINE_STYLE_OPTIONS = [
@@ -973,11 +1007,7 @@ const ARROW_STYLE_OPTIONS = [
 ];
 const PROTOCOL_PRESETS = ['REST', 'gRPC', 'GraphQL', 'Async'];
 
-function onEdgeContextMenu(ev, e) {
-  ev.preventDefault();
-  ev.stopPropagation();
-  selectItem('edge', e.id);
-
+function buildEdgeMenuItems(e, menuX, menuY) {
   const items = [{ label: 'Line Style', heading: true }];
   for (const opt of LINE_STYLE_OPTIONS) {
     const active = (e.lineStyle || 'solid') === opt.key;
@@ -990,6 +1020,26 @@ function onEdgeContextMenu(ev, e) {
       },
     });
   }
+  items.push('-');
+  items.push({ label: 'Routing', heading: true });
+  const isOrthogonal = e.routing === 'orthogonal';
+  items.push({
+    label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved (drag the line to shape it)',
+    action: () => {
+      e.routing = undefined;
+      renderAll();
+      saveState();
+    },
+  });
+  items.push({
+    label: (isOrthogonal ? '✓ ' : '   ') + 'Orthogonal',
+    action: () => {
+      e.routing = 'orthogonal';
+      e.curve = undefined;
+      renderAll();
+      saveState();
+    },
+  });
   items.push('-');
   items.push({ label: 'Arrowhead', heading: true });
   for (const opt of ARROW_STYLE_OPTIONS) {
@@ -1016,7 +1066,7 @@ function onEdgeContextMenu(ev, e) {
       },
     });
   }
-  items.push({ label: '   Custom…', action: () => openProtocolEditor(e, ev.clientX, ev.clientY) });
+  items.push({ label: '   Custom…', action: () => openProtocolEditor(e, menuX, menuY) });
   if (e.protocol) {
     items.push({
       label: '   Clear Label',
@@ -1030,7 +1080,14 @@ function onEdgeContextMenu(ev, e) {
   items.push('-');
   items.push({ label: 'Delete', action: () => deleteSelected() });
 
-  showContextMenu(ev.clientX, ev.clientY, items);
+  return items;
+}
+
+function onEdgeContextMenu(ev, e) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  selectItem('edge', e.id);
+  showContextMenu(ev.clientX, ev.clientY, buildEdgeMenuItems(e, ev.clientX, ev.clientY));
 }
 
 function onCanvasContextMenu(ev) {

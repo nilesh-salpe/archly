@@ -147,6 +147,31 @@ html, body {
   border-right-color: transparent;
 }
 
+.palette-search-wrap {
+  position: sticky;
+  top: -10px;
+  margin: -10px -10px 8px;
+  padding: 10px 10px 8px;
+  background: var(--chrome-bg);
+  z-index: 3;
+}
+
+.palette-search {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.palette-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .palette-tab {
   flex-shrink: 0;
   width: 14px;
@@ -333,8 +358,10 @@ html, body {
   fill: none;
   stroke: transparent;
   stroke-width: 14;
-  cursor: pointer;
+  cursor: grab;
 }
+
+.edge-hit:active { cursor: grabbing; }
 
 .edge-badge circle {
   fill: var(--input-bg);

@@ -44,31 +44,21 @@
 
         <span class="tb-sep"></span>
 
-        <button id="btn-copy" class="btn" title="Copy the selected component (Ctrl/Cmd+C)" disabled>Copy</button>
-        <button id="btn-paste" class="btn" title="Paste (Ctrl/Cmd+V)" disabled>Paste</button>
-        <button id="btn-duplicate" class="btn" title="Duplicate the selected component (Ctrl/Cmd+D)" disabled>Duplicate</button>
-        <button id="btn-front" class="btn" title="Bring to front ( ] )" disabled>Front</button>
-        <button id="btn-back" class="btn" title="Send to back ( [ )" disabled>Back</button>
-        <button id="btn-delete" class="btn" title="Delete the selection (Delete)" disabled>Delete</button>
+        <button id="btn-edit" class="btn" title="Edit the current selection (also available by right-click)" disabled>Edit &#9662;</button>
 
         <span class="tb-sep"></span>
 
-        <button id="btn-linestyle" class="btn" title="Set the selected arrow's line style" disabled>Line &#9662;</button>
-        <button id="btn-arrowstyle" class="btn" title="Set the selected arrow's arrowhead style" disabled>Arrow &#9662;</button>
-
-        <span class="tb-sep"></span>
-
-        <button id="btn-export-png" class="btn" title="Export the diagram as a PNG image">Export PNG</button>
-        <button id="btn-export-svg" class="btn" title="Export the diagram as an SVG image">Export SVG</button>
-        <button id="btn-export-yaml" class="btn" title="Export the diagram as a YAML file">Export YAML</button>
-        <button id="btn-import-yaml" class="btn" title="Import a diagram from a YAML file">Import YAML</button>
+        <button id="btn-file" class="btn" title="Export or import a diagram">File &#9662;</button>
         <input type="file" id="import-yaml-input" accept=".yaml,.yml" style="display:none" />
       </div>
     </header>
 
     <div class="body">
       <aside class="palette" id="palette">
-        <!-- populated by app.js from COMPONENTS -->
+        <div class="palette-search-wrap">
+          <input type="search" id="palette-search" class="palette-search" placeholder="Search components&hellip;" />
+        </div>
+        <!-- category sections populated by app.js from COMPONENTS -->
       </aside>
       <button id="btn-palette-tab" class="palette-tab" title="Show or hide the component palette">&laquo;</button>
 
