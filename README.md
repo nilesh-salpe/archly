@@ -1,4 +1,4 @@
-# System Design Studio
+# Archly
 
 A drag-and-drop cloud architecture diagram tool, built as a static page with
 no build step, meant to run on GitHub Pages.
