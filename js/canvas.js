@@ -260,7 +260,6 @@ function renderAll() {
     if (!n.container) layerNodes.appendChild(renderRegularNode(n));
   }
 
-  ensureFlowDot();
   updateToolbarState();
 }
 
