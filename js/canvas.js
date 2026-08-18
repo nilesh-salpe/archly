@@ -110,12 +110,16 @@ function addNode(componentId, cx, cy) {
 }
 
 function removeNode(nodeId) {
+  const removedEdgeIds = state.edges.filter((e) => e.from === nodeId || e.to === nodeId).map((e) => e.id);
   state.nodes = state.nodes.filter((n) => n.id !== nodeId);
   state.edges = state.edges.filter((e) => e.from !== nodeId && e.to !== nodeId);
+  simFailedNodeIds.delete(nodeId);
+  for (const id of removedEdgeIds) simFailedEdgeIds.delete(id);
 }
 
 function removeEdge(edgeId) {
   state.edges = state.edges.filter((e) => e.id !== edgeId);
+  simFailedEdgeIds.delete(edgeId);
 }
 
 function nodeById(id) {
@@ -130,6 +134,8 @@ function clearDiagram() {
   state.nextEdgeId = 1;
   state.selected = null;
   state.multiIds.clear();
+  simFailedNodeIds.clear(); // ids get reused from 1 in the next diagram — a stale id could collide
+  simFailedEdgeIds.clear();
   renderAll();
   saveState();
 }
@@ -142,6 +148,8 @@ function loadDiagram(nodes, edges, nextNodeId, nextEdgeId) {
   state.nextEdgeId = nextEdgeId;
   state.selected = null;
   state.multiIds.clear();
+  simFailedNodeIds.clear(); // ids get reused from 1 in the next diagram — a stale id could collide
+  simFailedEdgeIds.clear();
   renderAll();
   saveState();
 }
@@ -213,6 +221,8 @@ function restoreSnapshot(json) {
   state.nextEdgeId = data.nextEdgeId;
   state.selected = null;
   state.multiIds.clear();
+  simFailedNodeIds.clear(); // ids can be reassigned across undo/redo steps — a stale id could collide
+  simFailedEdgeIds.clear();
   renderAll();
   try {
     localStorage.setItem(STORAGE_KEY, json);
@@ -418,6 +428,7 @@ function renderAll() {
   if (emptyState) emptyState.style.display = state.nodes.length === 0 ? 'flex' : 'none';
 
   renderSimAnnotations();
+  renderSimFailures();
   updateSimSummary();
   updateToolbarState();
 }
@@ -1604,6 +1615,15 @@ function buildNodeMenuItems(n, menuX, menuY) {
       label: `   Variable Cost: ${formatCostPer100Rps(nodeVariableCostPer100Rps(n))}${typeof n.costPer100Rps === 'number' ? '' : ' (default)'}`,
       action: () => openVariableCostEditor(n, menuX, menuY),
     });
+    // Only offered while the Latency & Cost view is on, so with it off the
+    // diagram is guaranteed to render exactly as if chaos didn't exist.
+    if (showSimAnnotations) {
+      const isFailed = simFailedNodeIds.has(n.id);
+      items.push({
+        label: (isFailed ? '✓ ' : '   ') + 'Simulate Failure',
+        action: () => toggleNodeFailure(n.id),
+      });
+    }
   }
   items.push('-');
   items.push({ label: 'Bring to Front    ]', action: () => bringToFront(n.id) });
@@ -1744,6 +1764,20 @@ function buildEdgeMenuItems(e, menuX, menuY) {
         renderAll();
         saveState();
       },
+    });
+  }
+  // Only offered while the Latency & Cost view is on, so with it off the
+  // diagram is guaranteed to render exactly as if chaos didn't exist. A
+  // *connection* failure — the link is down but both endpoints are
+  // healthy — is distinct from failing a node itself (see canvas.js's
+  // buildNodeMenuItems).
+  if (showSimAnnotations) {
+    items.push('-');
+    items.push({ label: 'Simulation', heading: true });
+    const isFailed = simFailedEdgeIds.has(e.id);
+    items.push({
+      label: (isFailed ? '✓ ' : '   ') + 'Simulate Connection Failure',
+      action: () => toggleEdgeFailure(e.id),
     });
   }
   items.push('-');

@@ -39,8 +39,25 @@
 // node), summed across every non-container, non-text node. With no RPS
 // configured the variable term is always 0, so this reduces exactly to a
 // fixed-only total.
+//
+// ---------- Chaos / failure ----------
+// Two independent kinds, both only offered while the Latency & Cost view is
+// on (so with it off the diagram is guaranteed to render exactly as if
+// chaos didn't exist): right-click a node → "Simulate Failure" (the
+// component itself is down), or right-click an edge → "Simulate Connection
+// Failure" (both endpoints are healthy, but this specific link is broken —
+// a network partition/timeout/firewall rule, not a component outage).
+// simFailedNodeIds/simFailedEdgeIds are transient view state — Sets, not
+// fields on the node/edge — so they never touch the diagram's saved state,
+// undo history, or YAML export, and reset on reload same as Play's
+// animation state does. Reachability, not a fixed "this breaks that" table:
+// reachableNodeIds() takes optional sets of node/edge ids to treat as down,
+// and redundancy (two paths in, only one cut) falls out for free from the
+// graph walk rather than needing bespoke detection.
 
 let showSimAnnotations = false;
+let simFailedNodeIds = new Set();
+let simFailedEdgeIds = new Set();
 
 const SIM_PREFS_KEY = 'cad_sim_prefs_v1';
 
@@ -150,14 +167,21 @@ function computeNodeRps() {
 
 // Nodes reachable forward from `originId`, stopping at (not crossing) a
 // fire-and-forget edge — crossing one enters a different origin's flow,
-// already accounted for separately.
-function reachableNodeIds(originId) {
+// already accounted for separately. `downNodeIds`/`downEdgeIds` (both
+// optional — chaos simulation) block traversal through a failed component
+// or across a specific broken connection, so a node with a second, intact
+// path in still comes out reachable — no separate redundancy logic needed.
+// If the origin itself is down, nothing is reachable.
+function reachableNodeIds(originId, downNodeIds, downEdgeIds) {
+  if (downNodeIds && downNodeIds.has(originId)) return new Set();
   const visited = new Set([originId]);
   const queue = [originId];
   while (queue.length) {
     const cur = queue.shift();
     for (const e of state.edges) {
       if (e.from !== cur || e.arrowStyle === 'none') continue;
+      if (downEdgeIds && downEdgeIds.has(e.id)) continue;
+      if (downNodeIds && downNodeIds.has(e.to)) continue;
       if (!visited.has(e.to)) {
         visited.add(e.to);
         queue.push(e.to);
@@ -167,13 +191,15 @@ function reachableNodeIds(originId) {
   return visited;
 }
 
-function computeOriginLatencyMs(origin, groups) {
-  const reachable = reachableNodeIds(origin.id);
+function computeOriginLatencyMs(origin, groups, downNodeIds, downEdgeIds) {
+  const reachable = reachableNodeIds(origin.id, downNodeIds, downEdgeIds);
   let total = 0;
   for (const group of groups) {
     let stepMax = 0;
     for (const edge of group.edges) {
       if (edge.arrowStyle === 'none' || !reachable.has(edge.from)) continue;
+      if (downEdgeIds && downEdgeIds.has(edge.id)) continue;
+      if (downNodeIds && downNodeIds.has(edge.to)) continue;
       const target = nodeById(edge.to);
       if (!target) continue;
       const hop = nodeLatencyMs(target);
@@ -199,6 +225,82 @@ function computeTotalCostPerHour(rpsMap) {
     total += nodeCostPerHour(n, map);
   }
   return total;
+}
+
+// ---------- Chaos / failure ----------
+
+function toggleNodeFailure(nodeId) {
+  if (simFailedNodeIds.has(nodeId)) simFailedNodeIds.delete(nodeId);
+  else simFailedNodeIds.add(nodeId);
+  renderAll(); // transient view state — no saveState(), same as selection
+}
+
+function toggleEdgeFailure(edgeId) {
+  if (simFailedEdgeIds.has(edgeId)) simFailedEdgeIds.delete(edgeId);
+  else simFailedEdgeIds.add(edgeId);
+  renderAll();
+}
+
+function hasSimFailures() {
+  return simFailedNodeIds.size > 0 || simFailedEdgeIds.size > 0;
+}
+
+function clearSimFailures() {
+  if (!hasSimFailures()) return;
+  simFailedNodeIds.clear();
+  simFailedEdgeIds.clear();
+  renderAll();
+}
+
+// Every node knocked out of reach by the current failures, across every
+// origin unaffected by being down itself — the "collateral damage" set
+// renderSimFailures() dims and the summary counts.
+function computeUnreachableIds() {
+  const impacted = new Set();
+  if (!hasSimFailures()) return impacted;
+  for (const origin of computeOrigins()) {
+    if (simFailedNodeIds.has(origin.id)) continue;
+    const normal = reachableNodeIds(origin.id);
+    const after = reachableNodeIds(origin.id, simFailedNodeIds, simFailedEdgeIds);
+    for (const id of normal) {
+      if (!after.has(id) && !simFailedNodeIds.has(id)) impacted.add(id);
+    }
+  }
+  return impacted;
+}
+
+function formatDeltaLatency(deltaMs) {
+  if (deltaMs === 0) return '';
+  const sign = deltaMs > 0 ? '+' : '-';
+  return ` (${sign}${formatLatency(Math.abs(deltaMs))})`;
+}
+
+function computeFailureSummaryLines() {
+  if (!hasSimFailures()) return [];
+  const groups = getStepGroups();
+  const lines = [];
+  for (const origin of computeOrigins()) {
+    if (simFailedNodeIds.has(origin.id)) {
+      lines.push(`${origin.label}: down`);
+      continue;
+    }
+    const normal = reachableNodeIds(origin.id);
+    const after = reachableNodeIds(origin.id, simFailedNodeIds, simFailedEdgeIds);
+    const unreachableCount = normal.size - after.size;
+    if (unreachableCount <= 0) continue; // this origin's flow isn't touched by the current failures
+    const nodeWord = unreachableCount === 1 ? 'node' : 'nodes';
+    if (after.size <= 1) {
+      // nothing left beyond the origin itself — the flow can't get anywhere
+      lines.push(`${origin.label}: BROKEN — ${unreachableCount} ${nodeWord} unreachable`);
+    } else {
+      const normalLatency = computeOriginLatencyMs(origin, groups);
+      const afterLatency = computeOriginLatencyMs(origin, groups, simFailedNodeIds, simFailedEdgeIds);
+      lines.push(
+        `${origin.label}: ${unreachableCount} ${nodeWord} unreachable, ${formatLatency(afterLatency)}${formatDeltaLatency(afterLatency - normalLatency)}`
+      );
+    }
+  }
+  return lines;
 }
 
 // ---------- Formatting ----------
@@ -244,6 +346,58 @@ function renderSimAnnotations() {
   }
 }
 
+function renderSimFailures() {
+  const layer = document.getElementById('layer-sim');
+  if (!layer) return;
+  if (!showSimAnnotations || !hasSimFailures()) return;
+
+  for (const id of simFailedNodeIds) {
+    const nodeEl = document.querySelector(`.node[data-node-id="${id}"]`);
+    if (nodeEl) nodeEl.classList.add('sim-failed');
+  }
+  for (const id of simFailedEdgeIds) {
+    const edgeEl = document.querySelector(`.edge[data-edge-id="${id}"]`);
+    if (edgeEl) edgeEl.classList.add('sim-failed-edge');
+  }
+
+  const unreachableIds = computeUnreachableIds();
+  for (const id of unreachableIds) {
+    const nodeEl = document.querySelector(`.node[data-node-id="${id}"]`);
+    if (nodeEl) nodeEl.classList.add('sim-unreachable');
+  }
+  for (const e of state.edges) {
+    if (simFailedEdgeIds.has(e.id)) continue; // already the stronger .sim-failed-edge styling
+    if (simFailedNodeIds.has(e.from) || simFailedNodeIds.has(e.to) || unreachableIds.has(e.from) || unreachableIds.has(e.to)) {
+      const edgeEl = document.querySelector(`.edge[data-edge-id="${e.id}"]`);
+      if (edgeEl) edgeEl.classList.add('sim-unreachable');
+    }
+  }
+
+  // A red X drawn over each explicitly-failed node/connection — distinct
+  // from the dimming above, which marks collateral damage rather than the
+  // cause of it.
+  for (const id of simFailedNodeIds) {
+    const node = nodeById(id);
+    if (!node) continue;
+    const cx = node.x + node.w / 2, cy = node.y + node.h / 2, s = 12;
+    layer.appendChild(buildFailureMark(cx, cy, s));
+  }
+  for (const id of simFailedEdgeIds) {
+    const edge = state.edges.find((e) => e.id === id);
+    if (!edge) continue;
+    const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+    if (!geo) continue;
+    layer.appendChild(buildFailureMark(geo.badge.x, geo.badge.y, 9));
+  }
+}
+
+function buildFailureMark(cx, cy, s) {
+  const mark = el('g', { class: 'sim-failed-mark' });
+  mark.appendChild(el('line', { x1: cx - s, y1: cy - s, x2: cx + s, y2: cy + s }));
+  mark.appendChild(el('line', { x1: cx - s, y1: cy + s, x2: cx + s, y2: cy - s }));
+  return mark;
+}
+
 function updateSimSummary() {
   const summaryEl = document.getElementById('sim-summary');
   if (!summaryEl) return;
@@ -263,6 +417,12 @@ function updateSimSummary() {
     lines = origins.map(({ node, latencyMs }) => `${node.label}: ${formatLatency(latencyMs)}${rpsSuffix(node)}`);
   }
   lines.push(`Cost ${formatCost(computeTotalCostPerHour())}`);
+
+  const failureLines = computeFailureSummaryLines();
+  if (failureLines.length) {
+    lines.push('Failure impact:');
+    lines.push(...failureLines);
+  }
 
   summaryEl.textContent = lines.join('\n');
   summaryEl.style.display = 'block';

@@ -33,6 +33,12 @@ no build step, meant to run on GitHub Pages.
   both a variable cost component and per-flow latency; diagrams with
   multiple independent entry points (or an async/fire-and-forget branch)
   get one latency figure per flow instead of a single blended number.
+- **Chaos / failure simulation** (right-click, while Latency & Cost is on)
+  — mark a component down or a specific connection broken (both endpoints
+  otherwise healthy — a network partition, not an outage) and see what's
+  actually cut off: redundant paths keep working, everything else dims,
+  with a per-flow impact summary. Purely a view — nothing here is saved to
+  the diagram.
 - **Pattern library** — 14 pre-built diagrams (3-Tier Web App, Microservices
   + API Gateway, Cache-Aside, ML, GenAI, RAG, Event-Driven/Pub-Sub, Async Job
   Queue, Serverless, Batch/ETL, Multi-Region DR, Saga, Multi-Agent GenAI,

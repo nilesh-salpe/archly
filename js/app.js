@@ -210,7 +210,6 @@ function buildEmptyStateShortcuts() {
 
 // ---------- Help / tips panel ----------
 
-const HELP_SEEN_KEY = 'cad_help_seen_v1';
 let helpPanelEl = null;
 
 function hideHelpPanel() {
@@ -294,13 +293,17 @@ function wireToolbar() {
   document.getElementById('btn-view').addEventListener('click', (ev) => {
     ev.stopPropagation();
     const rect = ev.currentTarget.getBoundingClientRect();
-    showContextMenu(rect.left, rect.bottom + 4, [
+    const items = [
       { label: (showGrid ? '✓ ' : '   ') + 'Grid Background', action: toggleGrid },
       { label: (showRulers ? '✓ ' : '   ') + 'Rulers', action: toggleRulers },
       { label: (showPalette ? '✓ ' : '   ') + 'Palette', action: togglePalette },
       '-',
       { label: (showSimAnnotations ? '✓ ' : '   ') + 'Latency & Cost (simulated)', action: toggleSimAnnotations },
-    ]);
+    ];
+    if (hasSimFailures()) {
+      items.push({ label: `   Clear Failures (${simFailedNodeIds.size + simFailedEdgeIds.size})`, action: clearSimFailures });
+    }
+    showContextMenu(rect.left, rect.bottom + 4, items);
   });
 
   document.getElementById('btn-play').addEventListener('click', playFlow);
@@ -368,13 +371,4 @@ document.addEventListener('DOMContentLoaded', async () => {
   buildEmptyStateShortcuts();
   wireToolbar();
   initCanvas();
-
-  if (!localStorage.getItem(HELP_SEEN_KEY)) {
-    try {
-      localStorage.setItem(HELP_SEEN_KEY, '1');
-    } catch (e) {
-      /* ignore */
-    }
-    toggleHelpPanel();
-  }
 });

@@ -214,7 +214,29 @@ exports).
     existed — strictly additive, no behavior change for diagrams that don't
     use it. `computeTotalCostPerHour()` sums every non-container, non-text
     node — independent of the flow, since cost is "what's running."
-  - No chaos-failure simulation yet — planned as a later, separate pass.
+  - **Chaos/failure**: two independent, transient Sets — `simFailedNodeIds`
+    (component down) and `simFailedEdgeIds` (this specific connection is
+    down, both endpoints otherwise healthy — a network partition/timeout,
+    not an outage). Neither is a field on the node/edge object, so neither
+    ever touches saved diagram state, undo history, or YAML export, and
+    both reset on reload same as Play's animation state. Both are gated
+    behind `showSimAnnotations` at every entry point (the right-click menu
+    items in canvas.js's `buildNodeMenuItems`/`buildEdgeMenuItems`, and
+    `renderSimFailures()`) — with Latency & Cost off, the canvas is
+    guaranteed to render exactly as if chaos didn't exist.
+    `reachableNodeIds`/`computeOriginLatencyMs` both take these two sets as
+    optional params (a node/edge simply isn't traversed), so redundancy —
+    two paths in, only one cut — falls out of the ordinary graph walk with
+    no bespoke "is this redundant" logic. `computeUnreachableIds()` is the
+    resulting collateral-damage set (still up, nothing reaches it) that
+    `renderSimFailures()` dims — kept visually distinct from a direct
+    failure (solid red border/line + a red X mark, via `buildFailureMark()`)
+    so cause and effect read differently at a glance. `clearDiagram()`/
+    `loadDiagram()`/`restoreSnapshot()` (canvas.js) all clear both sets —
+    node/edge ids get reassigned from 1 in a freshly loaded diagram, so a
+    stale id could otherwise collide with an unrelated node in the new one
+    (this happened during development: a stale id from a previous pattern
+    landed on an unrelated node after switching patterns).
 
 - Node label: click the label text to rename inline (single-line `<input>`,
   or a `<textarea>` for the textOnly "Text" tool). Body/icon drag to move.
@@ -261,9 +283,12 @@ only thing that needs updating for a UX change:
 - **Palette empty-search message** (`#palette-empty`) — toggled in
   `filterPalette()` when a search matches nothing.
 - **Help panel** (`?` button, `js/app.js`'s `buildHelpPanel`/`toggleHelpPanel`)
-  — a static tips/shortcuts reference, auto-opened once on a visitor's first
-  load (`HELP_SEEN_KEY` in `localStorage`), reopenable anytime from the
-  toolbar.
+  — a static tips/shortcuts reference, click-to-open only. It used to
+  auto-open once on a visitor's first load; removed deliberately (a forced
+  first-visit popup is more interruption than help) in favor of the button
+  always being visible plus the footer being available for the simulation
+  summary instead (see `js/simulate.js` below) — `index.html`'s `<footer>`
+  no longer carries static instructional text at all.
 
 ## Deploying
 
