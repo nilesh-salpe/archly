@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cloud Architecture Diagrammer</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">&#9635;</span>
+        <span>Cloud Architecture Diagrammer</span>
+      </div>
+      <div class="toolbar">
+        <button id="btn-new" class="btn" title="Clear the canvas and start a new diagram">New</button>
+
+        <label class="tb-group">
+          <span class="tb-label">Pattern</span>
+          <select id="pattern-select" class="select">
+            <option value="">Load a pattern&hellip;</option>
+          </select>
+        </label>
+
+        <span class="tb-sep"></span>
+
+        <button id="btn-play" class="btn btn-accent" title="Animate the request flow in arrow order">&#9654; Play</button>
+        <button id="btn-pause" class="btn" title="Pause after the current step">&#10074;&#10074; Pause</button>
+        <button id="btn-reset" class="btn" title="Reset the flow animation">&#8634; Reset</button>
+        <label class="tb-group">
+          <span class="tb-label">Speed</span>
+          <select id="speed-select" class="select">
+            <option value="1600">Slow</option>
+            <option value="900" selected>Normal</option>
+            <option value="450">Fast</option>
+          </select>
+        </label>
+
+        <span class="tb-sep"></span>
+
+        <button id="btn-export-png" class="btn" title="Export the diagram as a PNG image">Export PNG</button>
+        <button id="btn-export-svg" class="btn" title="Export the diagram as an SVG image">Export SVG</button>
+      </div>
+    </header>
+
+    <div class="body">
+      <aside class="palette" id="palette">
+        <!-- populated by app.js from COMPONENTS -->
+      </aside>
+
+      <main class="canvas-wrap" id="canvas-wrap">
+        <svg id="canvas" width="2400" height="1600" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" class="arrowhead-path"></path>
+            </marker>
+          </defs>
+          <g id="layer-containers"></g>
+          <g id="layer-edges"></g>
+          <g id="layer-nodes"></g>
+          <g id="layer-overlay" class="no-export"></g>
+        </svg>
+      </main>
+    </div>
+
+    <footer class="hint" id="hint">
+      Drag a component onto the canvas. Hover a node to reveal connector dots, then drag one onto another node to draw a numbered flow arrow. Click a node or arrow to select it; press Delete to remove it.
+    </footer>
+  </div>
+
+  <script src="js/components.js"></script>
+  <script src="js/canvas.js"></script>
+  <script src="js/arrows.js"></script>
+  <script src="js/animate.js"></script>
+  <script src="js/patterns.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
