@@ -240,6 +240,8 @@ function diagramToYAMLObject() {
       if (typeof n.costPerHour === 'number') obj.costPerHour = n.costPerHour;
       if (typeof n.costPer100Rps === 'number') obj.costPer100Rps = n.costPer100Rps;
       if (typeof n.rps === 'number') obj.rps = n.rps;
+      if (n.textStyle) obj.textStyle = n.textStyle;
+      if (n.textColor) obj.textColor = n.textColor;
       return obj;
     }),
     edges: state.edges.map((e) => {
@@ -305,6 +307,8 @@ function importYAMLFile(file) {
         costPerHour: typeof spec.costPerHour === 'number' ? spec.costPerHour : undefined,
         costPer100Rps: typeof spec.costPer100Rps === 'number' ? spec.costPer100Rps : undefined,
         rps: typeof spec.rps === 'number' ? spec.rps : undefined,
+        textStyle: typeof spec.textStyle === 'string' ? spec.textStyle : undefined,
+        textColor: typeof spec.textColor === 'string' ? spec.textColor : undefined,
       };
       idMap[spec.id] = nid;
       nodes.push(node);

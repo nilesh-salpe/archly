@@ -79,6 +79,17 @@ exports).
     keeps working unchanged for every pointer-math function. `export.js`
     strips that inline style before export so exports are always full-res
     regardless of on-screen zoom.
+  - **Text formatting** (`textOnly` nodes only): `TEXT_STYLE_PRESETS`
+    (`normal`/`h1`/`h2`/`h3`/`italic`, each a `{fontSize, fontWeight,
+    italic}`) plus an optional `node.textColor` hex string. Right-click →
+    style radio options and "Text Color…" (`openTextColorPanel`, a swatch
+    grid + native `<input type=color>`, same floating-panel pattern as the
+    pattern/help panels) set `node.textStyle`/`node.textColor` via
+    `setTextStyle`/`setTextColor`. `textInlineStyle(n)` renders these as an
+    inline SVG `style` attribute (wins over the CSS class defaults, and
+    survives `svg.cloneNode(true)` on export with no `EXPORT_STYLE` changes
+    needed) — consumed by `buildTextOnlyLabel`/`recomputeTextOnlyHeight`.
+    Both fields round-trip through YAML export/import and pattern files.
 - **`js/arrows.js`** — pure geometry, no DOM/state mutation. `computeEdgeGeometry(edge, allEdges, allNodes)`
   is the single entry point; it returns `{start, end, d, badge, labelPos, points, refs}`.
   - **Endpoints**: `computeStraightEndpoints`/`computeOrthogonalPoints` use
@@ -170,10 +181,19 @@ exports).
 - **`js/app.js`** — palette build (+ search/filter, + collapsible category
   sections, all default-collapsed) and toolbar wiring.
 - **`js/simulate.js`** — rough latency/cost/RPS estimates, toggled from
-  View ▾ ("Latency & Cost") — deliberately *not* a separate mode/screen,
-  just an optional annotation layer (`#layer-sim`, `no-export` so it never
-  shows up in exports) plus a small floating summary box (`#sim-summary`).
-  Per-node numbers come from the `CATEGORY_DEFAULT_*` tables
+  View ▾ ("Latency & Cost") — an optional annotation layer on the canvas
+  (`#layer-sim`, `no-export` so it never shows up in exports) plus a
+  structured results panel on the right (`#results-panel`/
+  `#results-panel-content`, `updateSimSummary()`) — a collapsible sidebar
+  mirroring the palette's own toggle pattern (`showResultsPanel` alongside
+  `showPalette` in canvas.js's view-prefs bundle; `btn-results-tab`), not a
+  separate mode. Turning Latency & Cost on auto-reveals the panel if it was
+  collapsed; turning it off leaves the panel's own shown/hidden state alone.
+  The panel is built via DOM construction (`domEl`/`buildResultRow`), not
+  `innerHTML` string interpolation — node labels are free text the user
+  controls, so this follows the same safe pattern as the rest of the app's
+  label rendering (`textContent`/`el()`, never `innerHTML` with data baked
+  in). Per-node numbers come from the `CATEGORY_DEFAULT_*` tables
   (components.js, per-category — not per-component-type, to keep ~90
   components maintainable) unless a node has its own override — right-click
   → Simulation → RPS/Latency/Cost/Variable Cost

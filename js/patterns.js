@@ -25,7 +25,7 @@ const PATTERN_FILES = [
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '13';
+const ASSET_VERSION = '15';
 
 let PATTERNS = [];
 
@@ -98,6 +98,8 @@ function loadPattern(id) {
       costPerHour: typeof spec.costPerHour === 'number' ? spec.costPerHour : undefined,
       costPer100Rps: typeof spec.costPer100Rps === 'number' ? spec.costPer100Rps : undefined,
       rps: typeof spec.rps === 'number' ? spec.rps : undefined,
+      textStyle: typeof spec.textStyle === 'string' ? spec.textStyle : undefined,
+      textColor: typeof spec.textColor === 'string' ? spec.textColor : undefined,
     };
     idMap[spec.id] = nid;
     nodes.push(node);

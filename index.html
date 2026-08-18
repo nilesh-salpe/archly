@@ -8,7 +8,7 @@
      and every js/*.js below) so returning visitors' browsers fetch the new files
      instead of serving stale cached ones. See js/patterns.js's ASSET_VERSION for
      the matching bump on the patterns/*.yaml fetches. -->
-<link rel="stylesheet" href="css/styles.css?v=13" />
+<link rel="stylesheet" href="css/styles.css?v=15" />
 </head>
 <body>
   <div class="app">
@@ -97,20 +97,25 @@
           </svg>
         </div>
       </main>
+
+      <button id="btn-results-tab" class="results-tab" title="Show or hide simulation results">&raquo;</button>
+      <aside class="results-panel" id="results-panel">
+        <div class="results-panel-header">Simulation</div>
+        <div id="results-panel-content" class="results-panel-content"></div>
+      </aside>
     </div>
 
-    <footer class="sim-summary" id="sim-summary" style="display:none"></footer>
     <div class="brand-footer">SALPE Global Tech &copy; 2026</div>
   </div>
 
-  <script src="js/components.js?v=13"></script>
-  <script src="js/yaml.js?v=13"></script>
-  <script src="js/canvas.js?v=13"></script>
-  <script src="js/arrows.js?v=13"></script>
-  <script src="js/animate.js?v=13"></script>
-  <script src="js/simulate.js?v=13"></script>
-  <script src="js/patterns.js?v=13"></script>
-  <script src="js/export.js?v=13"></script>
-  <script src="js/app.js?v=13"></script>
+  <script src="js/components.js?v=15"></script>
+  <script src="js/yaml.js?v=15"></script>
+  <script src="js/canvas.js?v=15"></script>
+  <script src="js/arrows.js?v=15"></script>
+  <script src="js/animate.js?v=15"></script>
+  <script src="js/simulate.js?v=15"></script>
+  <script src="js/patterns.js?v=15"></script>
+  <script src="js/export.js?v=15"></script>
+  <script src="js/app.js?v=15"></script>
 </body>
 </html>

@@ -48,6 +48,7 @@ function initCanvas() {
     hideContextMenu();
     hidePatternPanel();
     hideHelpPanel();
+    hideTextColorPanel();
   });
 
   loadState();
@@ -256,6 +257,7 @@ const PREFS_KEY = 'cad_prefs_v1';
 let showGrid = true;
 let showRulers = false;
 let showPalette = true;
+let showResultsPanel = true;
 
 function loadPrefs() {
   try {
@@ -265,6 +267,7 @@ function loadPrefs() {
     if (typeof p.showGrid === 'boolean') showGrid = p.showGrid;
     if (typeof p.showRulers === 'boolean') showRulers = p.showRulers;
     if (typeof p.showPalette === 'boolean') showPalette = p.showPalette;
+    if (typeof p.showResultsPanel === 'boolean') showResultsPanel = p.showResultsPanel;
   } catch (e) {
     /* ignore */
   }
@@ -272,7 +275,7 @@ function loadPrefs() {
 
 function savePrefs() {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ showGrid, showRulers, showPalette }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ showGrid, showRulers, showPalette, showResultsPanel }));
   } catch (e) {
     /* ignore */
   }
@@ -285,6 +288,10 @@ function applyViewPrefs() {
   if (paletteEl) paletteEl.classList.toggle('palette-hidden', !showPalette);
   const tabBtn = document.getElementById('btn-palette-tab');
   if (tabBtn) tabBtn.innerHTML = showPalette ? '&laquo;' : '&raquo;';
+  const resultsEl = document.getElementById('results-panel');
+  if (resultsEl) resultsEl.classList.toggle('results-hidden', !showResultsPanel);
+  const resultsTabBtn = document.getElementById('btn-results-tab');
+  if (resultsTabBtn) resultsTabBtn.innerHTML = showResultsPanel ? '&raquo;' : '&laquo;';
   updateRulers();
 }
 
@@ -302,6 +309,12 @@ function toggleRulers() {
 
 function togglePalette() {
   showPalette = !showPalette;
+  applyViewPrefs();
+  savePrefs();
+}
+
+function toggleResultsPanel() {
+  showResultsPanel = !showResultsPanel;
   applyViewPrefs();
   savePrefs();
 }
@@ -542,6 +555,43 @@ function wrapClamped(text, maxWidth, maxLines, fontSize, fontWeight) {
   return clamped;
 }
 
+// Formatting for the freeform "Text" tool only (n.textOnly) — regular
+// component labels stay at their fixed small size deliberately, so a system
+// diagram's node labels don't turn into a font showcase. Applied as an
+// inline `style` attribute (not a CSS class) so it wins over the
+// .text-node-label default and — since inline styles travel with a cloned
+// element — needs no EXPORT_STYLE changes to render correctly in exports.
+const TEXT_STYLE_PRESETS = {
+  normal: { fontSize: 16, fontWeight: 600, italic: false },
+  h1: { fontSize: 28, fontWeight: 700, italic: false },
+  h2: { fontSize: 22, fontWeight: 700, italic: false },
+  h3: { fontSize: 18, fontWeight: 600, italic: false },
+  italic: { fontSize: 16, fontWeight: 600, italic: true },
+};
+const TEXT_STYLE_LABELS = {
+  normal: 'Normal',
+  h1: 'Heading 1',
+  h2: 'Heading 2',
+  h3: 'Heading 3',
+  italic: 'Italic',
+};
+const TEXT_COLOR_SWATCHES = [
+  '#1e293b', '#64748b', '#dc2626', '#ea580c', '#d97706',
+  '#65a30d', '#059669', '#0891b2', '#2563eb', '#7c3aed', '#c026d3', '#db2777',
+];
+
+function textStylePreset(n) {
+  return TEXT_STYLE_PRESETS[n.textStyle] || TEXT_STYLE_PRESETS.normal;
+}
+
+function textInlineStyle(n) {
+  const preset = textStylePreset(n);
+  let style = `font-size:${preset.fontSize}px;font-weight:${preset.fontWeight};`;
+  if (preset.italic) style += 'font-style:italic;';
+  if (n.textColor) style += `fill:${n.textColor};`;
+  return style;
+}
+
 function buildMultilineText(cls, cx, lastLineY, lines, lineHeight) {
   const startY = lastLineY - (lines.length - 1) * lineHeight;
   const text = el('text', { class: cls, x: cx, y: startY });
@@ -557,18 +607,24 @@ function buildRegularLabel(n) {
 }
 
 function buildTextOnlyLabel(n) {
-  const lines = wrapText(n.label, n.w - 16, 16, 600);
-  const lineHeight = 20;
-  const lastLineY = n.h / 2 + 5 + ((lines.length - 1) * lineHeight) / 2;
-  return buildMultilineText('node-label text-node-label', n.w / 2, lastLineY, lines, lineHeight);
+  const preset = textStylePreset(n);
+  const lines = wrapText(n.label, n.w - 16, preset.fontSize, preset.fontWeight);
+  const lineHeight = Math.round(preset.fontSize * 1.25);
+  const lastLineY = n.h / 2 + preset.fontSize * 0.3 + ((lines.length - 1) * lineHeight) / 2;
+  const textEl = buildMultilineText('node-label text-node-label', n.w / 2, lastLineY, lines, lineHeight);
+  textEl.setAttribute('style', textInlineStyle(n));
+  return textEl;
 }
 
 // Text-only nodes have no manual resize handle, so their box grows to fit
-// wrapped content instead — called whenever a text-only node's label changes.
+// wrapped content instead — called whenever a text-only node's label or
+// text style changes (font size affects both wrapping and line height).
 function recomputeTextOnlyHeight(n) {
   if (!n.textOnly) return;
-  const lines = wrapText(n.label, n.w - 16, 16, 600);
-  n.h = Math.max(44, lines.length * 20 + 20);
+  const preset = textStylePreset(n);
+  const lines = wrapText(n.label, n.w - 16, preset.fontSize, preset.fontWeight);
+  const lineHeight = Math.round(preset.fontSize * 1.25);
+  n.h = Math.max(44, lines.length * lineHeight + 20);
 }
 
 function renderRegularNode(n) {
@@ -759,6 +815,78 @@ function openVariableCostEditor(node, clientX, clientY) {
 
 function openRpsEditor(node, clientX, clientY) {
   openNodeSimEditor(node, 'rps', clientX, clientY, typeof node.rps === 'number' ? node.rps : 0);
+}
+
+// ---------- Text formatting (freeform "Text" tool only) ----------
+
+function setTextStyle(node, style) {
+  node.textStyle = style === 'normal' ? undefined : style;
+  recomputeTextOnlyHeight(node);
+  renderAll();
+  saveState();
+}
+
+function setTextColor(node, color) {
+  node.textColor = color || undefined;
+  renderAll();
+  saveState();
+}
+
+let textColorPanelEl = null;
+
+function hideTextColorPanel() {
+  if (textColorPanelEl) {
+    textColorPanelEl.remove();
+    textColorPanelEl = null;
+  }
+}
+
+function openTextColorPanel(node, clientX, clientY) {
+  hideTextColorPanel();
+  const panel = document.createElement('div');
+  panel.className = 'text-color-panel';
+
+  for (const color of TEXT_COLOR_SWATCHES) {
+    const swatch = document.createElement('button');
+    swatch.className = 'text-color-swatch';
+    swatch.style.background = color;
+    swatch.title = color;
+    if (node.textColor === color) swatch.classList.add('active');
+    swatch.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setTextColor(node, color);
+      hideTextColorPanel();
+    });
+    panel.appendChild(swatch);
+  }
+
+  const customLabel = document.createElement('label');
+  customLabel.className = 'text-color-custom';
+  customLabel.textContent = 'Custom…';
+  const customInput = document.createElement('input');
+  customInput.type = 'color';
+  customInput.value = node.textColor || '#1e293b';
+  customInput.addEventListener('input', () => setTextColor(node, customInput.value));
+  customInput.addEventListener('click', (ev) => ev.stopPropagation());
+  customLabel.appendChild(customInput);
+  panel.appendChild(customLabel);
+
+  if (node.textColor) {
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'text-color-reset';
+    resetBtn.textContent = 'Reset to default';
+    resetBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      setTextColor(node, null);
+      hideTextColorPanel();
+    });
+    panel.appendChild(resetBtn);
+  }
+
+  panel.style.left = `${clientX}px`;
+  panel.style.top = `${clientY}px`;
+  document.body.appendChild(panel);
+  textColorPanelEl = panel;
 }
 
 // A node's whole border (not just fixed handle points) is a connector — drag
@@ -1594,6 +1722,21 @@ function buildNodeMenuItems(n, menuX, menuY) {
     { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
     { label: 'Copy    ⌘C', action: () => copySelectedNode() },
   ];
+  if (n.textOnly) {
+    items.push('-');
+    items.push({ label: 'Text Style', heading: true });
+    for (const style of Object.keys(TEXT_STYLE_LABELS)) {
+      const active = (n.textStyle || 'normal') === style;
+      items.push({
+        label: (active ? '✓ ' : '   ') + TEXT_STYLE_LABELS[style],
+        action: () => setTextStyle(n, style),
+      });
+    }
+    items.push({
+      label: '   Text Color…',
+      action: () => openTextColorPanel(n, menuX, menuY),
+    });
+  }
   if (!n.container && !n.textOnly) {
     items.push('-');
     items.push({ label: 'Simulation', heading: true });
@@ -1827,6 +1970,7 @@ function onKeyDown(ev) {
     hideContextMenu();
     hidePatternPanel();
     hideHelpPanel();
+    hideTextColorPanel();
   }
 
   const active = document.activeElement;

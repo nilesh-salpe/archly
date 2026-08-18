@@ -25,14 +25,18 @@ no build step, meant to run on GitHub Pages.
   adds an extra elbow beyond the default pair, or removes a bend.
 - **Play the request flow** — animates a dot along each arrow in numbered
   order, pulsing the active nodes. Pause / Reset / Speed controls included.
+- **Rich text labels** — the freeform Text tool supports Heading 1-3,
+  Normal, and Italic styles plus a color palette (or custom color picker),
+  set from its right-click menu.
 - **Simulated latency, cost & RPS** (View ▾) — a per-node estimate badge and
-  a summary of end-to-end latency, hourly cost, and traffic, computed from
-  practical category-level defaults; right-click a node to override any of
-  them. Set an RPS on a flow's entry point (client, event source, cron —
-  anywhere with no incoming arrows) and it propagates downstream, driving
-  both a variable cost component and per-flow latency; diagrams with
-  multiple independent entry points (or an async/fire-and-forget branch)
-  get one latency figure per flow instead of a single blended number.
+  a collapsible right-side results panel summarizing end-to-end latency,
+  hourly cost, and traffic, computed from practical category-level
+  defaults; right-click a node to override any of them. Set an RPS on a
+  flow's entry point (client, event source, cron — anywhere with no
+  incoming arrows) and it propagates downstream, driving both a variable
+  cost component and per-flow latency; diagrams with multiple independent
+  entry points (or an async/fire-and-forget branch) get one latency figure
+  per flow instead of a single blended number.
 - **Chaos / failure simulation** (right-click, while Latency & Cost is on)
   — mark a component down or a specific connection broken (both endpoints
   otherwise healthy — a network partition, not an outage) and see what's

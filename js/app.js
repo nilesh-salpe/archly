@@ -289,6 +289,7 @@ function wireToolbar() {
   document.getElementById('btn-zoom-fit').addEventListener('click', zoomToFit);
 
   document.getElementById('btn-palette-tab').addEventListener('click', togglePalette);
+  document.getElementById('btn-results-tab').addEventListener('click', toggleResultsPanel);
 
   document.getElementById('btn-view').addEventListener('click', (ev) => {
     ev.stopPropagation();

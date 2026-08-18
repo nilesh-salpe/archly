@@ -82,7 +82,15 @@ function saveSimPrefs() {
 
 function toggleSimAnnotations() {
   showSimAnnotations = !showSimAnnotations;
+  // Reveal the results panel the moment simulation is turned on, so there's
+  // nowhere to look for the numbers — turning it back off leaves the panel
+  // state alone (it's a separate, manually-collapsible preference otherwise).
+  if (showSimAnnotations && !showResultsPanel) {
+    showResultsPanel = true;
+    savePrefs();
+  }
   saveSimPrefs();
+  applyViewPrefs();
   renderAll();
 }
 
@@ -398,32 +406,72 @@ function buildFailureMark(cx, cy, s) {
   return mark;
 }
 
+// Builds one <dt>/<dd> pair — DOM construction rather than innerHTML string
+// building, since node.label is free-text the user controls (renaming a
+// node to something HTML-ish shouldn't be a concern here, same as
+// everywhere else in the app that renders labels via textContent/el()).
+function buildResultRow(label, value) {
+  const dt = domEl('dt');
+  dt.textContent = label;
+  const dd = domEl('dd');
+  dd.textContent = value;
+  return [dt, dd];
+}
+
+function appendResultsHeading(content, text) {
+  const h = domEl('h4');
+  h.textContent = text;
+  content.appendChild(h);
+}
+
 function updateSimSummary() {
-  const summaryEl = document.getElementById('sim-summary');
-  if (!summaryEl) return;
+  const content = document.getElementById('results-panel-content');
+  if (!content) return;
+  content.innerHTML = ''; // clearing, not interpolating — safe
+
   if (!showSimAnnotations || !state.nodes.length) {
-    summaryEl.style.display = 'none';
+    const empty = domEl('p', 'results-empty');
+    empty.textContent = showSimAnnotations
+      ? 'Add a node to see simulation results.'
+      : 'Turn on View ▾ → Latency & Cost to see simulation results here.';
+    content.appendChild(empty);
     return;
   }
 
   const origins = computeOriginLatencies();
   const rpsSuffix = (node) => (typeof node.rps === 'number' ? ` @ ${formatRps(node.rps)}` : '');
 
-  let lines;
-  if (origins.length <= 1) {
-    const only = origins[0];
-    lines = [`E2E Latency ${formatLatency(only ? only.latencyMs : 0)}${only ? rpsSuffix(only.node) : ''}`];
+  appendResultsHeading(content, origins.length > 1 ? 'Latency by flow' : 'E2E Latency');
+  const latencyList = domEl('dl', 'results-list');
+  if (origins.length) {
+    for (const { node, latencyMs } of origins) {
+      const [dt, dd] = buildResultRow(node.label, `${formatLatency(latencyMs)}${rpsSuffix(node)}`);
+      latencyList.appendChild(dt);
+      latencyList.appendChild(dd);
+    }
   } else {
-    lines = origins.map(({ node, latencyMs }) => `${node.label}: ${formatLatency(latencyMs)}${rpsSuffix(node)}`);
+    const [dt, dd] = buildResultRow('No flow entry point', formatLatency(0));
+    latencyList.appendChild(dt);
+    latencyList.appendChild(dd);
   }
-  lines.push(`Cost ${formatCost(computeTotalCostPerHour())}`);
+  content.appendChild(latencyList);
+
+  appendResultsHeading(content, 'Cost');
+  const costList = domEl('dl', 'results-list');
+  const [costDt, costDd] = buildResultRow('Total', formatCost(computeTotalCostPerHour()));
+  costList.appendChild(costDt);
+  costList.appendChild(costDd);
+  content.appendChild(costList);
 
   const failureLines = computeFailureSummaryLines();
   if (failureLines.length) {
-    lines.push('Failure impact:');
-    lines.push(...failureLines);
+    appendResultsHeading(content, 'Failure Impact');
+    const failList = domEl('ul', 'results-failure-list');
+    for (const line of failureLines) {
+      const li = domEl('li');
+      li.textContent = line;
+      failList.appendChild(li);
+    }
+    content.appendChild(failList);
   }
-
-  summaryEl.textContent = lines.join('\n');
-  summaryEl.style.display = 'block';
 }
