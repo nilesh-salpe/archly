@@ -169,29 +169,52 @@ exports).
     `<img>`, only when it's the top-level document or an `<object>`/`<iframe>`.
 - **`js/app.js`** — palette build (+ search/filter, + collapsible category
   sections, all default-collapsed) and toolbar wiring.
-- **`js/simulate.js`** — rough latency/cost estimates, toggled from View ▾
-  ("Latency & Cost") — deliberately *not* a separate mode/screen, just an
-  optional annotation layer (`#layer-sim`, `no-export` so it never shows up
-  in exports) plus a small floating summary box (`#sim-summary`). Numbers
-  come from `CATEGORY_DEFAULT_LATENCY_MS`/`CATEGORY_DEFAULT_COST_PER_HOUR`
+- **`js/simulate.js`** — rough latency/cost/RPS estimates, toggled from
+  View ▾ ("Latency & Cost") — deliberately *not* a separate mode/screen,
+  just an optional annotation layer (`#layer-sim`, `no-export` so it never
+  shows up in exports) plus a small floating summary box (`#sim-summary`).
+  Per-node numbers come from the `CATEGORY_DEFAULT_*` tables
   (components.js, per-category — not per-component-type, to keep ~90
-  components maintainable) unless a node has its own `latencyMs`/
-  `costPerHour` override — right-click a node → Simulation →
-  "Latency: …"/"Cost: …" (`openLatencyEditor`/`openCostEditor` in
-  canvas.js, same floating-`<input>` pattern as `openProtocolEditor`;
-  clearing the field deletes the override, reverting to the category
-  default). Overrides round-trip through YAML export/import and pattern
-  files (`latencyMs`/`costPerHour` fields, both optional).
-  `computeE2ELatencyMs()` reuses `getStepGroups()` (animate.js) — the exact
-  same grouping Play uses — so sequential numbered steps add and concurrent
-  (same-numbered) steps take the max of their branches, matching what
-  watching Play would show you. Edges styled with no arrowhead
-  (`arrowStyle: 'none'`, the fire-and-forget convention several patterns
-  use for metrics/logging side edges) are excluded as non-blocking.
-  `computeTotalCostPerHour()` sums every non-container, non-text node's
-  cost — independent of the flow, since cost is "what's running," not
-  "what's used per request." No RPS/load or chaos-failure simulation yet —
-  planned as later, separate passes.
+  components maintainable) unless a node has its own override — right-click
+  → Simulation → RPS/Latency/Cost/Variable Cost
+  (`openRpsEditor`/`openLatencyEditor`/`openCostEditor`/`openVariableCostEditor`
+  in canvas.js, all the same floating-`<input>` pattern as
+  `openProtocolEditor`; clearing a field deletes the override). All four
+  fields (`rps`/`latencyMs`/`costPerHour`/`costPer100Rps`) round-trip
+  through YAML export/import and pattern files.
+  - **Origins**: `computeOrigins()` — a node with no incoming edges (a
+    client, cron, event source), or one whose *only* incoming edges are
+    fire-and-forget (`arrowStyle: 'none'`, the convention several patterns
+    use for metrics/logging side edges) — structurally downstream, but
+    logically the start of its own flow since nothing upstream is waiting
+    on it. Nodes with no outgoing edges don't count (not the start of
+    anything). RPS and latency both key off this list — computed fresh each
+    time rather than cached, since it's one pass over the graph and cheap
+    at diagram scale.
+  - **Latency**: `computeOriginLatencies()` — one figure **per origin**, not
+    a single global number, since unrelated flows (or an async
+    continuation) genuinely complete at different times. Each reuses
+    `getStepGroups()` (animate.js) — the exact grouping Play uses, so
+    sequential numbered steps add and concurrent (same-numbered) steps take
+    the max of their branches — scoped to `reachableNodeIds(origin)`, a
+    forward walk that stops at (doesn't cross) a fire-and-forget edge,
+    since crossing one enters a different origin's territory. Collapses to
+    a single unlabeled line in the summary when there's only one origin
+    (the common case, unchanged from before this existed).
+  - **RPS**: `computeNodeRps()` — only origin nodes get an RPS field;
+    everyone else's is derived by walking edges in ascending `number` order
+    (so upstream values are known first) and summing at fan-in points while
+    broadcasting the full value to every branch of a fan-out (no
+    traffic-split weights). An explicit override always wins over
+    propagation. Inert (contributes nothing) until at least one node has
+    RPS set — `isRpsSimActive()` gates the badge/summary RPS display.
+  - **Cost**: `nodeCostPerHour(n, rpsMap)` = fixed (`nodeFixedCostPerHour`)
+    + variable (`nodeVariableCostPer100Rps(n) × rps/100`). With no RPS
+    configured this is exactly the fixed-only total from before RPS
+    existed — strictly additive, no behavior change for diagrams that don't
+    use it. `computeTotalCostPerHour()` sums every non-container, non-text
+    node — independent of the flow, since cost is "what's running."
+  - No chaos-failure simulation yet — planned as a later, separate pass.
 
 - Node label: click the label text to rename inline (single-line `<input>`,
   or a `<textarea>` for the textOnly "Text" tool). Body/icon drag to move.

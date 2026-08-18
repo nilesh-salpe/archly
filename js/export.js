@@ -238,6 +238,8 @@ function diagramToYAMLObject() {
       };
       if (typeof n.latencyMs === 'number') obj.latencyMs = n.latencyMs;
       if (typeof n.costPerHour === 'number') obj.costPerHour = n.costPerHour;
+      if (typeof n.costPer100Rps === 'number') obj.costPer100Rps = n.costPer100Rps;
+      if (typeof n.rps === 'number') obj.rps = n.rps;
       return obj;
     }),
     edges: state.edges.map((e) => {
@@ -301,6 +303,8 @@ function importYAMLFile(file) {
         h,
         latencyMs: typeof spec.latencyMs === 'number' ? spec.latencyMs : undefined,
         costPerHour: typeof spec.costPerHour === 'number' ? spec.costPerHour : undefined,
+        costPer100Rps: typeof spec.costPer100Rps === 'number' ? spec.costPer100Rps : undefined,
+        rps: typeof spec.rps === 'number' ? spec.rps : undefined,
       };
       idMap[spec.id] = nid;
       nodes.push(node);

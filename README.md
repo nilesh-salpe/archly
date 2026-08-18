@@ -25,9 +25,14 @@ no build step, meant to run on GitHub Pages.
   adds an extra elbow beyond the default pair, or removes a bend.
 - **Play the request flow** — animates a dot along each arrow in numbered
   order, pulsing the active nodes. Pause / Reset / Speed controls included.
-- **Simulated latency & cost** (View ▾) — a per-node estimate badge and an
-  end-to-end latency + hourly cost summary, computed from practical
-  category-level defaults; right-click a node to override either one.
+- **Simulated latency, cost & RPS** (View ▾) — a per-node estimate badge and
+  a summary of end-to-end latency, hourly cost, and traffic, computed from
+  practical category-level defaults; right-click a node to override any of
+  them. Set an RPS on a flow's entry point (client, event source, cron —
+  anywhere with no incoming arrows) and it propagates downstream, driving
+  both a variable cost component and per-flow latency; diagrams with
+  multiple independent entry points (or an async/fire-and-forget branch)
+  get one latency figure per flow instead of a single blended number.
 - **Pattern library** — 14 pre-built diagrams (3-Tier Web App, Microservices
   + API Gateway, Cache-Aside, ML, GenAI, RAG, Event-Driven/Pub-Sub, Async Job
   Queue, Serverless, Batch/ETL, Multi-Region DR, Saga, Multi-Agent GenAI,

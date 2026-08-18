@@ -739,7 +739,15 @@ function openLatencyEditor(node, clientX, clientY) {
 }
 
 function openCostEditor(node, clientX, clientY) {
-  openNodeSimEditor(node, 'costPerHour', clientX, clientY, nodeCostPerHour(node));
+  openNodeSimEditor(node, 'costPerHour', clientX, clientY, nodeFixedCostPerHour(node));
+}
+
+function openVariableCostEditor(node, clientX, clientY) {
+  openNodeSimEditor(node, 'costPer100Rps', clientX, clientY, nodeVariableCostPer100Rps(node));
+}
+
+function openRpsEditor(node, clientX, clientY) {
+  openNodeSimEditor(node, 'rps', clientX, clientY, typeof node.rps === 'number' ? node.rps : 0);
 }
 
 // A node's whole border (not just fixed handle points) is a connector — drag
@@ -1578,13 +1586,23 @@ function buildNodeMenuItems(n, menuX, menuY) {
   if (!n.container && !n.textOnly) {
     items.push('-');
     items.push({ label: 'Simulation', heading: true });
+    if (computeOrigins().some((o) => o.id === n.id)) {
+      items.push({
+        label: `   RPS: ${typeof n.rps === 'number' ? formatRps(n.rps) : '— (unset)'}`,
+        action: () => openRpsEditor(n, menuX, menuY),
+      });
+    }
     items.push({
       label: `   Latency: ${formatLatency(nodeLatencyMs(n))}${typeof n.latencyMs === 'number' ? '' : ' (default)'}`,
       action: () => openLatencyEditor(n, menuX, menuY),
     });
     items.push({
-      label: `   Cost: ${formatCost(nodeCostPerHour(n))}${typeof n.costPerHour === 'number' ? '' : ' (default)'}`,
+      label: `   Cost: ${formatCost(nodeFixedCostPerHour(n))}${typeof n.costPerHour === 'number' ? '' : ' (default)'}`,
       action: () => openCostEditor(n, menuX, menuY),
+    });
+    items.push({
+      label: `   Variable Cost: ${formatCostPer100Rps(nodeVariableCostPer100Rps(n))}${typeof n.costPer100Rps === 'number' ? '' : ' (default)'}`,
+      action: () => openVariableCostEditor(n, menuX, menuY),
     });
   }
   items.push('-');

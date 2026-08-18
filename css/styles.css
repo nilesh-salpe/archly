@@ -562,6 +562,9 @@ html, body {
   border: 1px solid var(--chrome-border);
   border-radius: 8px;
   box-shadow: var(--shadow);
+  white-space: pre-line;
+  line-height: 1.5;
+  max-width: 320px;
 }
 
 /* Inline numeric editor for edge badges */

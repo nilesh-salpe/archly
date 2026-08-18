@@ -116,6 +116,33 @@ const CATEGORY_DEFAULT_COST_PER_HOUR = {
   general: 0,
 };
 
+// The variable half of node cost: the hourly cost of an extra 100 req/s of
+// traffic at that node (only kicks in once an RPS simulation is active —
+// see js/simulate.js). Directional, not calibrated to any provider's real
+// pricing — most categories are fixed-cost-only (0 here); usage-billed
+// categories (LLM calls, third-party APIs, embedding/reranking calls) get a
+// nonzero rate to reflect that they scale with traffic, unlike a running
+// instance or database.
+const CATEGORY_DEFAULT_COST_PER_100RPS = {
+  client: 0,
+  edge: 0,
+  netbound: 0,
+  services: 0,
+  compute: 0,
+  communication: 0,
+  cache: 0,
+  data: 0,
+  processing: 0,
+  reliability: 0,
+  security: 0,
+  observability: 0,
+  ml: 5,
+  genai: 200,
+  rag: 10,
+  external: 20,
+  general: 0,
+};
+
 // Icon fragments, viewBox-local coordinates 0..24. Kept intentionally simple
 // (circles/rects/paths) so they read clearly at small node size.
 const ICONS = {
