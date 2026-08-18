@@ -7,13 +7,16 @@ const STORAGE_KEY = 'cad_diagram_v1';
 
 const DEFAULT_NODE_W = 150;
 const DEFAULT_NODE_H = 70;
+const CANVAS_W = 2400;
+const CANVAS_H = 1600;
 
 const state = {
   nodes: [], // {id, type, category, label, x, y, w, h, container, icon}
   edges: [], // {id, from, to, number}
   nextNodeId: 1,
   nextEdgeId: 1,
-  selected: null, // {kind:'node'|'edge', id}
+  selected: null, // {kind:'node'|'edge', id} — the "primary" selection; null when multiIds holds 0 or 2+ nodes
+  multiIds: new Set(), // node ids selected together via shift-click or marquee drag
 };
 
 let svg, layerContainers, layerEdges, layerNodes, layerOverlay;
@@ -33,21 +36,26 @@ function initCanvas() {
 
   canvasWrap.addEventListener('dragover', onCanvasDragOver);
   canvasWrap.addEventListener('drop', onCanvasDrop);
-  canvasWrap.addEventListener('click', () => {
-    state.selected = null;
-    renderAll();
-  });
+  canvasWrap.addEventListener('pointerdown', onCanvasPointerDown);
+  canvasWrap.addEventListener('click', onCanvasClick);
   canvasWrap.addEventListener('contextmenu', onCanvasContextMenu);
   canvasScroll.addEventListener('scroll', updateRulers);
+  canvasScroll.addEventListener('wheel', onCanvasWheel, { passive: false });
   window.addEventListener('resize', updateRulers);
 
   window.addEventListener('keydown', onKeyDown);
-  window.addEventListener('click', hideContextMenu);
+  window.addEventListener('click', () => {
+    hideContextMenu();
+    hidePatternPanel();
+    hideHelpPanel();
+  });
 
   loadState();
   loadPrefs();
   applyViewPrefs();
+  applyZoom();
   renderAll();
+  pushHistory(); // establish the undo floor at the state we just loaded
 }
 
 function domEl(tag, className) {
@@ -120,6 +128,7 @@ function clearDiagram() {
   state.nextNodeId = 1;
   state.nextEdgeId = 1;
   state.selected = null;
+  state.multiIds.clear();
   renderAll();
   saveState();
 }
@@ -131,23 +140,31 @@ function loadDiagram(nodes, edges, nextNodeId, nextEdgeId) {
   state.nextNodeId = nextNodeId;
   state.nextEdgeId = nextEdgeId;
   state.selected = null;
+  state.multiIds.clear();
   renderAll();
   saveState();
 }
 
 // ---------- Persistence ----------
 
+function diagramSnapshotJSON() {
+  return JSON.stringify({
+    nodes: state.nodes,
+    edges: state.edges,
+    nextNodeId: state.nextNodeId,
+    nextEdgeId: state.nextEdgeId,
+  });
+}
+
+// saveState() is called at every point a diagram edit commits (drag-end,
+// rename-commit, menu actions, pattern load, etc.) — never mid-drag — so
+// hooking undo history here gives every commit point a history entry for
+// free, instead of sprinkling pushHistory() calls through every mutator.
 function saveState() {
+  const json = diagramSnapshotJSON();
+  pushHistory(json);
   try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        nodes: state.nodes,
-        edges: state.edges,
-        nextNodeId: state.nextNodeId,
-        nextEdgeId: state.nextEdgeId,
-      })
-    );
+    localStorage.setItem(STORAGE_KEY, json);
   } catch (e) {
     /* storage unavailable — ignore */
   }
@@ -165,6 +182,61 @@ function loadState() {
   } catch (e) {
     /* corrupt storage — start fresh */
   }
+}
+
+// ---------- Undo / redo ----------
+// A linear history of full diagram snapshots (JSON strings, cheap to diff
+// with === for the no-op check below). historyIndex points at the entry
+// matching the diagram's current on-screen state.
+
+const HISTORY_LIMIT = 100;
+let undoHistory = [];
+let historyIndex = -1;
+
+function pushHistory(json) {
+  const snap = json || diagramSnapshotJSON();
+  if (historyIndex >= 0 && undoHistory[historyIndex] === snap) return; // nothing actually changed
+  undoHistory = undoHistory.slice(0, historyIndex + 1);
+  undoHistory.push(snap);
+  if (undoHistory.length > HISTORY_LIMIT) undoHistory.shift();
+  historyIndex = undoHistory.length - 1;
+  updateUndoRedoButtons();
+}
+
+function restoreSnapshot(json) {
+  const data = JSON.parse(json);
+  resetFlow();
+  state.nodes = data.nodes;
+  state.edges = data.edges;
+  state.nextNodeId = data.nextNodeId;
+  state.nextEdgeId = data.nextEdgeId;
+  state.selected = null;
+  state.multiIds.clear();
+  renderAll();
+  try {
+    localStorage.setItem(STORAGE_KEY, json);
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function undo() {
+  if (historyIndex <= 0) return;
+  historyIndex--;
+  restoreSnapshot(undoHistory[historyIndex]);
+  updateUndoRedoButtons();
+}
+
+function redo() {
+  if (historyIndex >= undoHistory.length - 1) return;
+  historyIndex++;
+  restoreSnapshot(undoHistory[historyIndex]);
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  setBtnDisabled('btn-undo', historyIndex <= 0);
+  setBtnDisabled('btn-redo', historyIndex >= undoHistory.length - 1);
 }
 
 // ---------- View preferences (grid background / rulers) ----------
@@ -229,7 +301,10 @@ function updateRulers() {
   const sy = canvasScroll.scrollTop;
   const w = canvasScroll.clientWidth;
   const h = canvasScroll.clientHeight;
-  const step = 100;
+  // Ticks are spaced every 100 *diagram* units, so under zoom the on-screen
+  // gap between them shrinks/grows with zoomLevel while the printed number
+  // stays the true diagram coordinate.
+  const step = 100 * zoomLevel;
 
   rulerH.innerHTML = '';
   for (let x = Math.floor(sx / step) * step; x <= sx + w; x += step) {
@@ -238,7 +313,7 @@ function updateRulers() {
     rulerH.appendChild(line);
     const tick = domEl('div', 'ruler-tick');
     tick.style.left = `${x - sx}px`;
-    tick.textContent = x;
+    tick.textContent = Math.round(x / zoomLevel);
     rulerH.appendChild(tick);
   }
 
@@ -249,9 +324,75 @@ function updateRulers() {
     rulerV.appendChild(line);
     const tick = domEl('div', 'ruler-tick');
     tick.style.top = `${y - sy}px`;
-    tick.textContent = y;
+    tick.textContent = Math.round(y / zoomLevel);
     rulerV.appendChild(tick);
   }
+}
+
+// ---------- Zoom ----------
+// The SVG's viewBox stays fixed at "0 0 CANVAS_W CANVAS_H"; zooming changes
+// only the element's rendered CSS size, so the browser scales the whole
+// coordinate system for us. toSVGCoords() (via getScreenCTM()) already
+// accounts for that automatically, so every pointer-math function below
+// (drag, connect, resize, bend, marquee) needs no zoom-awareness of its own.
+
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 2;
+const ZOOM_STEP = 0.1;
+let zoomLevel = 1;
+
+function applyZoom() {
+  svg.style.width = `${CANVAS_W * zoomLevel}px`;
+  svg.style.height = `${CANVAS_H * zoomLevel}px`;
+  const label = document.getElementById('zoom-label');
+  if (label) label.textContent = `${Math.round(zoomLevel * 100)}%`;
+  updateRulers();
+}
+
+// Keeps the point under `anchorClient` (or the viewport center, if omitted)
+// stable on screen while the zoom level changes, so scroll-to-zoom feels
+// anchored at the cursor instead of jumping to the top-left.
+function setZoom(z, anchorClient) {
+  const newZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  if (Math.abs(newZoom - zoomLevel) < 0.001) return;
+  const rect = canvasScroll.getBoundingClientRect();
+  const cx = anchorClient ? anchorClient.x - rect.left : canvasScroll.clientWidth / 2;
+  const cy = anchorClient ? anchorClient.y - rect.top : canvasScroll.clientHeight / 2;
+  const svgX = (canvasScroll.scrollLeft + cx) / zoomLevel;
+  const svgY = (canvasScroll.scrollTop + cy) / zoomLevel;
+  zoomLevel = newZoom;
+  applyZoom();
+  canvasScroll.scrollLeft = svgX * zoomLevel - cx;
+  canvasScroll.scrollTop = svgY * zoomLevel - cy;
+}
+
+function zoomIn() { setZoom(zoomLevel + ZOOM_STEP); }
+function zoomOut() { setZoom(zoomLevel - ZOOM_STEP); }
+function zoomReset() { setZoom(1); }
+
+function zoomToFit() {
+  if (!state.nodes.length) { zoomReset(); return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of state.nodes) {
+    minX = Math.min(minX, n.x);
+    minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + n.w);
+    maxY = Math.max(maxY, n.y + n.h);
+  }
+  const pad = 60;
+  const w = maxX - minX + pad * 2;
+  const h = maxY - minY + pad * 2;
+  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(canvasScroll.clientWidth / w, canvasScroll.clientHeight / h)));
+  zoomLevel = z;
+  applyZoom();
+  canvasScroll.scrollLeft = (minX - pad) * z;
+  canvasScroll.scrollTop = (minY - pad) * z;
+}
+
+function onCanvasWheel(ev) {
+  if (!(ev.ctrlKey || ev.metaKey)) return; // plain scroll/trackpad pan is untouched
+  ev.preventDefault();
+  setZoom(zoomLevel + (ev.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP), { x: ev.clientX, y: ev.clientY });
 }
 
 // ---------- Rendering ----------
@@ -272,13 +413,17 @@ function renderAll() {
     if (!n.container) layerNodes.appendChild(renderRegularNode(n));
   }
 
+  const emptyState = document.getElementById('empty-state');
+  if (emptyState) emptyState.style.display = state.nodes.length === 0 ? 'flex' : 'none';
+
   updateToolbarState();
 }
 
 function updateToolbarState() {
   // Edit ▾ shows a node/edge menu when something's selected, or just Paste
   // when there's clipboard content to offer — disabled only when neither applies.
-  setBtnDisabled('btn-edit', !state.selected && !clipboardNode);
+  const hasClipboard = clipboardNodes && clipboardNodes.length > 0;
+  setBtnDisabled('btn-edit', !state.selected && !state.multiIds.size && !hasClipboard);
 }
 
 function setBtnDisabled(id, disabled) {
@@ -286,9 +431,13 @@ function setBtnDisabled(id, disabled) {
   if (btn) btn.disabled = disabled;
 }
 
+function isNodeSelected(id) {
+  return (state.selected && state.selected.kind === 'node' && state.selected.id === id) || state.multiIds.has(id);
+}
+
 function renderContainerNode(n) {
   const g = el('g', { class: 'node container-node', 'data-node-id': n.id, transform: `translate(${n.x},${n.y})` });
-  if (state.selected && state.selected.kind === 'node' && state.selected.id === n.id) g.classList.add('selected');
+  if (isNodeSelected(n.id)) g.classList.add('selected');
 
   const rect = el('rect', { class: 'container-rect', x: 0, y: 0, width: n.w, height: n.h, rx: 10 });
   const label = el('text', { class: 'container-label', x: 10, y: 20 }, textNode(n.label));
@@ -313,10 +462,7 @@ function renderContainerNode(n) {
     ev.stopPropagation();
     openRename(n);
   });
-  g.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    selectItem('node', n.id);
-  });
+  g.addEventListener('click', (ev) => onNodeClick(ev, n));
   g.addEventListener('contextmenu', (ev) => onNodeContextMenu(ev, n));
 
   return g;
@@ -413,7 +559,7 @@ function recomputeTextOnlyHeight(n) {
 
 function renderRegularNode(n) {
   const g = el('g', { class: 'node', 'data-node-id': n.id, transform: `translate(${n.x},${n.y})` });
-  if (state.selected && state.selected.kind === 'node' && state.selected.id === n.id) g.classList.add('selected');
+  if (isNodeSelected(n.id)) g.classList.add('selected');
   if (n.textOnly) g.classList.add('text-node');
 
   // Note gets its own sticky-note color regardless of category, and Text is
@@ -465,10 +611,7 @@ function renderRegularNode(n) {
     ev.stopPropagation();
     openRename(n);
   });
-  g.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    selectItem('node', n.id);
-  });
+  g.addEventListener('click', (ev) => onNodeClick(ev, n));
   g.addEventListener('contextmenu', (ev) => onNodeContextMenu(ev, n));
 
   return g;
@@ -690,33 +833,199 @@ function onCanvasDrop(ev) {
   addNode(componentId, x, y);
 }
 
-// ---------- Node dragging ----------
+// ---------- Node dragging (single node, or the whole multi-selection together) ----------
 
 let dragCtx = null;
 
 function startDragNode(ev, node) {
   ev.stopPropagation();
   ev.preventDefault();
-  selectItem('node', node.id);
+  if (ev.shiftKey) return; // shift-click toggles multi-select instead of dragging (see onNodeClick)
+
+  const isGroupDrag = state.multiIds.has(node.id) && state.multiIds.size > 1;
+  if (!isGroupDrag) selectItem('node', node.id);
+  const groupIds = isGroupDrag ? [...state.multiIds] : [node.id];
+
   const start = toSVGCoords(ev.clientX, ev.clientY);
-  dragCtx = { node, offX: start.x - node.x, offY: start.y - node.y };
+  dragCtx = {
+    anchorId: node.id,
+    offX: start.x - node.x,
+    offY: start.y - node.y,
+    items: groupIds.map((id) => {
+      const nn = nodeById(id);
+      return { node: nn, dx: nn.x - node.x, dy: nn.y - node.y };
+    }),
+  };
   window.addEventListener('pointermove', onDragNodeMove);
   window.addEventListener('pointerup', onDragNodeUp);
+}
+
+const GRID_SNAP = 10;
+const ALIGN_SNAP_THRESHOLD = 6;
+
+function snapToGrid(v) {
+  return Math.round(v / GRID_SNAP) * GRID_SNAP;
+}
+
+// Compares the dragged node's edges/center against every other node's, and
+// returns a small correction (dx/dy) plus the guide line(s) to draw when a
+// coordinate lands within ALIGN_SNAP_THRESHOLD of a match.
+function computeAlignmentSnap(anchorRect, excludeIds) {
+  const others = state.nodes.filter((n) => !excludeIds.has(n.id));
+  const targetsX = [], targetsY = [];
+  for (const o of others) {
+    targetsX.push(o.x, o.x + o.w / 2, o.x + o.w);
+    targetsY.push(o.y, o.y + o.h / 2, o.y + o.h);
+  }
+  const candidatesX = [anchorRect.x, anchorRect.x + anchorRect.w / 2, anchorRect.x + anchorRect.w];
+  const candidatesY = [anchorRect.y, anchorRect.y + anchorRect.h / 2, anchorRect.y + anchorRect.h];
+
+  let bestX = null, bestY = null;
+  for (const cx of candidatesX) {
+    for (const tx of targetsX) {
+      const dist = Math.abs(cx - tx);
+      if (dist <= ALIGN_SNAP_THRESHOLD && (!bestX || dist < bestX.dist)) bestX = { dist, delta: tx - cx, pos: tx };
+    }
+  }
+  for (const cy of candidatesY) {
+    for (const ty of targetsY) {
+      const dist = Math.abs(cy - ty);
+      if (dist <= ALIGN_SNAP_THRESHOLD && (!bestY || dist < bestY.dist)) bestY = { dist, delta: ty - cy, pos: ty };
+    }
+  }
+  return {
+    dx: bestX ? bestX.delta : 0,
+    dy: bestY ? bestY.delta : 0,
+    guideX: bestX ? bestX.pos : null,
+    guideY: bestY ? bestY.pos : null,
+  };
+}
+
+let alignGuideEls = [];
+
+function clearAlignGuides() {
+  for (const g of alignGuideEls) g.remove();
+  alignGuideEls = [];
+}
+
+function showAlignGuides(guideX, guideY) {
+  clearAlignGuides();
+  if (guideX !== null) {
+    const line = el('line', { class: 'align-guide', x1: guideX, y1: 0, x2: guideX, y2: CANVAS_H });
+    layerOverlay.appendChild(line);
+    alignGuideEls.push(line);
+  }
+  if (guideY !== null) {
+    const line = el('line', { class: 'align-guide', x1: 0, y1: guideY, x2: CANVAS_W, y2: guideY });
+    layerOverlay.appendChild(line);
+    alignGuideEls.push(line);
+  }
 }
 
 function onDragNodeMove(ev) {
   if (!dragCtx) return;
   const p = toSVGCoords(ev.clientX, ev.clientY);
-  dragCtx.node.x = p.x - dragCtx.offX;
-  dragCtx.node.y = p.y - dragCtx.offY;
+  let nx = p.x - dragCtx.offX;
+  let ny = p.y - dragCtx.offY;
+
+  // Snapping only applies to a single dragged node — for a group drag the
+  // relative layout matters more than any one member aligning, so movement
+  // stays free-form (still perfectly usable, just unsnapped).
+  if (dragCtx.items.length === 1 && !ev.altKey) {
+    const anchor = dragCtx.items[0].node;
+    const excludeIds = new Set([anchor.id]);
+    const snap = computeAlignmentSnap({ x: nx, y: ny, w: anchor.w, h: anchor.h }, excludeIds);
+    if (snap.guideX !== null || snap.guideY !== null) {
+      nx += snap.dx;
+      ny += snap.dy;
+      showAlignGuides(snap.guideX, snap.guideY);
+    } else {
+      clearAlignGuides();
+      nx = snapToGrid(nx);
+      ny = snapToGrid(ny);
+    }
+  }
+
+  for (const item of dragCtx.items) {
+    item.node.x = nx + item.dx;
+    item.node.y = ny + item.dy;
+  }
   renderAll();
 }
 
 function onDragNodeUp() {
   window.removeEventListener('pointermove', onDragNodeMove);
   window.removeEventListener('pointerup', onDragNodeUp);
+  clearAlignGuides();
   if (dragCtx) saveState();
   dragCtx = null;
+}
+
+// ---------- Marquee (rubber-band) multi-select ----------
+// A pointerdown that lands on canvas background (nodes/edges stopPropagation
+// their own pointerdown, so anything reaching here is background) starts a
+// drag-to-select rectangle instead of panning.
+
+let marqueeCtx = null;
+let marqueeJustFinished = false;
+
+function onCanvasPointerDown(ev) {
+  if (ev.button !== 0) return;
+  const start = toSVGCoords(ev.clientX, ev.clientY);
+  marqueeCtx = { startClient: { x: ev.clientX, y: ev.clientY }, start, additive: ev.shiftKey, moved: false, rectEl: null, lastRect: null };
+  window.addEventListener('pointermove', onMarqueeMove);
+  window.addEventListener('pointerup', onMarqueeUp);
+}
+
+function onMarqueeMove(ev) {
+  if (!marqueeCtx) return;
+  const dx = ev.clientX - marqueeCtx.startClient.x;
+  const dy = ev.clientY - marqueeCtx.startClient.y;
+  if (!marqueeCtx.moved && Math.hypot(dx, dy) > 4) {
+    marqueeCtx.moved = true;
+    marqueeCtx.rectEl = el('rect', { class: 'marquee-rect' });
+    layerOverlay.appendChild(marqueeCtx.rectEl);
+  }
+  if (!marqueeCtx.moved) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  const x = Math.min(marqueeCtx.start.x, p.x);
+  const y = Math.min(marqueeCtx.start.y, p.y);
+  const w = Math.abs(p.x - marqueeCtx.start.x);
+  const h = Math.abs(p.y - marqueeCtx.start.y);
+  marqueeCtx.rectEl.setAttribute('x', x);
+  marqueeCtx.rectEl.setAttribute('y', y);
+  marqueeCtx.rectEl.setAttribute('width', w);
+  marqueeCtx.rectEl.setAttribute('height', h);
+  marqueeCtx.lastRect = { x, y, w, h };
+}
+
+function onMarqueeUp() {
+  window.removeEventListener('pointermove', onMarqueeMove);
+  window.removeEventListener('pointerup', onMarqueeUp);
+  if (!marqueeCtx) return;
+  if (marqueeCtx.moved && marqueeCtx.lastRect) {
+    const r = marqueeCtx.lastRect;
+    const hits = state.nodes
+      .filter((n) => n.x < r.x + r.w && n.x + n.w > r.x && n.y < r.y + r.h && n.y + n.h > r.y)
+      .map((n) => n.id);
+    if (!marqueeCtx.additive) state.multiIds.clear();
+    for (const id of hits) state.multiIds.add(id);
+    state.selected = state.multiIds.size === 1 ? { kind: 'node', id: [...state.multiIds][0] } : null;
+    if (marqueeCtx.rectEl) marqueeCtx.rectEl.remove();
+    marqueeJustFinished = true;
+    renderAll();
+  }
+  marqueeCtx = null;
+}
+
+function onCanvasClick() {
+  if (marqueeJustFinished) {
+    marqueeJustFinished = false;
+    return;
+  }
+  state.selected = null;
+  state.multiIds.clear();
+  renderAll();
 }
 
 // ---------- Container resizing ----------
@@ -736,8 +1045,14 @@ function startResizeContainer(ev, node) {
 function onResizeMove(ev) {
   if (!resizeCtx) return;
   const p = toSVGCoords(ev.clientX, ev.clientY);
-  resizeCtx.node.w = Math.max(80, p.x + resizeCtx.offW);
-  resizeCtx.node.h = Math.max(60, p.y + resizeCtx.offH);
+  let w = Math.max(80, p.x + resizeCtx.offW);
+  let h = Math.max(60, p.y + resizeCtx.offH);
+  if (!ev.altKey) {
+    w = snapToGrid(w);
+    h = snapToGrid(h);
+  }
+  resizeCtx.node.w = w;
+  resizeCtx.node.h = h;
   renderAll();
 }
 
@@ -852,7 +1167,34 @@ function onEdgeBendUp() {
 
 function selectItem(kind, id) {
   state.selected = { kind, id };
+  state.multiIds.clear();
   renderAll();
+}
+
+// Shift-click a node to add/remove it from a multi-selection instead of
+// replacing the current selection outright.
+function toggleMultiSelect(nodeId) {
+  if (state.multiIds.has(nodeId)) {
+    state.multiIds.delete(nodeId);
+  } else {
+    // First shift-click after a plain single-select folds that selection in,
+    // so shift-clicking a second node grows a 2-item set rather than losing it.
+    if (state.multiIds.size === 0 && state.selected && state.selected.kind === 'node') {
+      state.multiIds.add(state.selected.id);
+    }
+    state.multiIds.add(nodeId);
+  }
+  state.selected = state.multiIds.size === 1 ? { kind: 'node', id: [...state.multiIds][0] } : null;
+  renderAll();
+}
+
+function onNodeClick(ev, n) {
+  ev.stopPropagation();
+  if (ev.shiftKey) {
+    toggleMultiSelect(n.id);
+  } else {
+    selectItem('node', n.id);
+  }
 }
 
 // selectItem() re-renders (destroying the DOM node whose position rename
@@ -867,6 +1209,15 @@ function openRename(n) {
 }
 
 function deleteSelected() {
+  if (state.multiIds.size > 0) {
+    resetFlow();
+    for (const id of state.multiIds) removeNode(id);
+    state.multiIds.clear();
+    state.selected = null;
+    renderAll();
+    saveState();
+    return;
+  }
   if (!state.selected) return;
   resetFlow();
   if (state.selected.kind === 'node') removeNode(state.selected.id);
@@ -881,47 +1232,77 @@ function deleteSelected() {
 // by container/regular while preserving relative order — so moving a node to
 // either end of the shared array is enough to re-layer it within its group.
 
-function bringToFront(nodeId) {
+function bringToFrontSilent(nodeId) {
   const idx = state.nodes.findIndex((n) => n.id === nodeId);
   if (idx === -1) return;
   const [n] = state.nodes.splice(idx, 1);
   state.nodes.push(n);
+}
+
+function bringToFront(nodeId) {
+  bringToFrontSilent(nodeId);
   renderAll();
   saveState();
 }
 
-function sendToBack(nodeId) {
+function sendToBackSilent(nodeId) {
   const idx = state.nodes.findIndex((n) => n.id === nodeId);
   if (idx === -1) return;
   const [n] = state.nodes.splice(idx, 1);
   state.nodes.unshift(n);
+}
+
+function sendToBack(nodeId) {
+  sendToBackSilent(nodeId);
   renderAll();
   saveState();
 }
 
 // ---------- Copy / paste ----------
+// clipboardNodes holds one or more node snapshots (ids stripped) so a
+// multi-selection copies/duplicates as a group, preserving relative layout.
 
-let clipboardNode = null;
+let clipboardNodes = null;
 
 function copySelectedNode() {
-  if (!state.selected || state.selected.kind !== 'node') return;
-  const n = nodeById(state.selected.id);
-  if (!n) return;
-  clipboardNode = { ...n };
-  delete clipboardNode.id;
+  const ids = state.multiIds.size > 0
+    ? [...state.multiIds]
+    : state.selected && state.selected.kind === 'node' ? [state.selected.id] : [];
+  if (!ids.length) return;
+  clipboardNodes = ids.map((id) => {
+    const c = { ...nodeById(id) };
+    delete c.id;
+    return c;
+  });
   updateToolbarState();
 }
 
 function pasteNode(pos) {
-  if (!clipboardNode) return null;
-  const w = clipboardNode.w, h = clipboardNode.h;
-  const x = pos ? pos.x - w / 2 : clipboardNode.x + 30;
-  const y = pos ? pos.y - h / 2 : clipboardNode.y + 30;
-  const node = { ...clipboardNode, id: state.nextNodeId++, x, y };
-  state.nodes.push(node);
-  selectItem('node', node.id);
+  if (!clipboardNodes || !clipboardNodes.length) return null;
+  const minX = Math.min(...clipboardNodes.map((c) => c.x));
+  const minY = Math.min(...clipboardNodes.map((c) => c.y));
+  const maxX = Math.max(...clipboardNodes.map((c) => c.x + c.w));
+  const maxY = Math.max(...clipboardNodes.map((c) => c.y + c.h));
+  const anchorX = pos ? pos.x - (maxX - minX) / 2 : minX + 30;
+  const anchorY = pos ? pos.y - (maxY - minY) / 2 : minY + 30;
+
+  const newIds = [];
+  for (const c of clipboardNodes) {
+    const node = { ...c, id: state.nextNodeId++, x: anchorX + (c.x - minX), y: anchorY + (c.y - minY) };
+    state.nodes.push(node);
+    newIds.push(node.id);
+  }
+
+  if (newIds.length === 1) {
+    state.selected = { kind: 'node', id: newIds[0] };
+    state.multiIds.clear();
+  } else {
+    state.selected = null;
+    state.multiIds = new Set(newIds);
+  }
+  renderAll();
   saveState();
-  return node;
+  return nodeById(newIds[0]);
 }
 
 function duplicateSelected() {
@@ -988,9 +1369,41 @@ function buildNodeMenuItems(n) {
   ];
 }
 
+function buildMultiSelectMenuItems() {
+  const count = state.multiIds.size;
+  return [
+    { label: `${count} selected`, heading: true },
+    { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
+    { label: 'Copy    ⌘C', action: () => copySelectedNode() },
+    '-',
+    {
+      label: 'Bring to Front    ]',
+      action: () => {
+        for (const id of state.multiIds) bringToFrontSilent(id);
+        renderAll();
+        saveState();
+      },
+    },
+    {
+      label: 'Send to Back    [',
+      action: () => {
+        for (const id of state.multiIds) sendToBackSilent(id);
+        renderAll();
+        saveState();
+      },
+    },
+    '-',
+    { label: 'Delete', action: () => deleteSelected() },
+  ];
+}
+
 function onNodeContextMenu(ev, n) {
   ev.preventDefault();
   ev.stopPropagation();
+  if (state.multiIds.size > 1 && state.multiIds.has(n.id)) {
+    showContextMenu(ev.clientX, ev.clientY, buildMultiSelectMenuItems());
+    return;
+  }
   selectItem('node', n.id);
   showContextMenu(ev.clientX, ev.clientY, buildNodeMenuItems(n));
 }
@@ -1091,7 +1504,7 @@ function onEdgeContextMenu(ev, e) {
 }
 
 function onCanvasContextMenu(ev) {
-  if (!clipboardNode) return;
+  if (!clipboardNodes || !clipboardNodes.length) return;
   ev.preventDefault();
   const pos = toSVGCoords(ev.clientX, ev.clientY);
   showContextMenu(ev.clientX, ev.clientY, [{ label: 'Paste', action: () => pasteNode(pos) }]);
@@ -1099,44 +1512,115 @@ function onCanvasContextMenu(ev) {
 
 // ---------- Keyboard shortcuts ----------
 
+const NUDGE_KEYS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+let nudgeSaveTimer = null;
+
+// Nudging repeats fast on key-repeat; debounce the commit (localStorage +
+// undo entry) so a long arrow-key hold doesn't flood the history stack.
+function nudgeSaveDebounced() {
+  clearTimeout(nudgeSaveTimer);
+  nudgeSaveTimer = setTimeout(saveState, 400);
+}
+
+function hasNodeSelection() {
+  return state.multiIds.size > 0 || (state.selected && state.selected.kind === 'node');
+}
+
+function selectedNodeIds() {
+  if (state.multiIds.size > 0) return [...state.multiIds];
+  if (state.selected && state.selected.kind === 'node') return [state.selected.id];
+  return [];
+}
+
 function onKeyDown(ev) {
-  if (ev.key === 'Escape') hideContextMenu();
+  if (ev.key === 'Escape') {
+    hideContextMenu();
+    hidePatternPanel();
+    hideHelpPanel();
+  }
 
   const active = document.activeElement;
   if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
 
   const mod = ev.ctrlKey || ev.metaKey;
 
+  if (ev.key === 'Escape' && (state.selected || state.multiIds.size)) {
+    state.selected = null;
+    state.multiIds.clear();
+    renderAll();
+    return;
+  }
+
+  if (mod && ev.key.toLowerCase() === 'z') {
+    ev.preventDefault();
+    if (ev.shiftKey) redo();
+    else undo();
+    return;
+  }
+  if (mod && ev.key.toLowerCase() === 'y') {
+    ev.preventDefault();
+    redo();
+    return;
+  }
+  if (mod && ev.key.toLowerCase() === 'a') {
+    ev.preventDefault();
+    if (!state.nodes.length) return;
+    state.multiIds = new Set(state.nodes.map((n) => n.id));
+    state.selected = state.multiIds.size === 1 ? { kind: 'node', id: state.nodes[0].id } : null;
+    renderAll();
+    return;
+  }
   if (mod && ev.key.toLowerCase() === 'c') {
-    if (state.selected && state.selected.kind === 'node') {
+    if (hasNodeSelection()) {
       ev.preventDefault();
       copySelectedNode();
     }
     return;
   }
   if (mod && ev.key.toLowerCase() === 'v') {
-    if (clipboardNode) {
+    if (clipboardNodes && clipboardNodes.length) {
       ev.preventDefault();
       pasteNode();
     }
     return;
   }
   if (mod && ev.key.toLowerCase() === 'd') {
-    if (state.selected && state.selected.kind === 'node') {
+    if (hasNodeSelection()) {
       ev.preventDefault();
       duplicateSelected();
     }
     return;
   }
-  if (ev.key === ']' && state.selected && state.selected.kind === 'node') {
-    bringToFront(state.selected.id);
+  if (NUDGE_KEYS[ev.key] && hasNodeSelection()) {
+    ev.preventDefault();
+    const step = ev.shiftKey ? 10 : 1;
+    const [dx, dy] = NUDGE_KEYS[ev.key];
+    for (const id of selectedNodeIds()) {
+      const n = nodeById(id);
+      if (n) {
+        n.x += dx * step;
+        n.y += dy * step;
+      }
+    }
+    renderAll();
+    nudgeSaveDebounced();
     return;
   }
-  if (ev.key === '[' && state.selected && state.selected.kind === 'node') {
-    sendToBack(state.selected.id);
+  if (ev.key === ']' && hasNodeSelection()) {
+    const ids = selectedNodeIds();
+    for (const id of ids) bringToFrontSilent(id);
+    renderAll();
+    saveState();
     return;
   }
-  if ((ev.key === 'Delete' || ev.key === 'Backspace') && state.selected) {
+  if (ev.key === '[' && hasNodeSelection()) {
+    const ids = selectedNodeIds();
+    for (const id of ids) sendToBackSilent(id);
+    renderAll();
+    saveState();
+    return;
+  }
+  if ((ev.key === 'Delete' || ev.key === 'Backspace') && (state.selected || state.multiIds.size)) {
     ev.preventDefault();
     deleteSelected();
   }

@@ -58,6 +58,11 @@ function buildExportSVG() {
   clone.querySelectorAll('.selected').forEach((elx) => elx.classList.remove('selected'));
   clone.querySelectorAll('.flow-active').forEach((elx) => elx.classList.remove('flow-active'));
 
+  // The live canvas's on-screen zoom sets inline width/height (see
+  // applyZoom() in canvas.js) — strip it so the export always renders at the
+  // content's true size regardless of the current zoom level.
+  clone.style.width = '';
+  clone.style.height = '';
   clone.setAttribute('width', bbox.w);
   clone.setAttribute('height', bbox.h);
   clone.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.w} ${bbox.h}`);

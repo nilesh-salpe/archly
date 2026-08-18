@@ -1,0 +1,91 @@
+id: multi-region-dr
+name: Multi-Region Active-Passive DR
+title: "Multi-Region Active-Passive Disaster Recovery"
+nodes:
+  - id: dns
+    type: dns
+    x: 60
+    y: 320
+    label: Global DNS / Failover
+  - id: regionA
+    type: region
+    x: 320
+    y: 60
+    w: 640
+    h: 520
+    label: "Region: Primary (us-east)"
+  - id: azA
+    type: az
+    x: 360
+    y: 130
+    w: 360
+    h: 420
+    label: AZ 1
+  - id: elbA
+    type: elb
+    x: 400
+    y: 250
+  - id: instanceA
+    type: instance
+    x: 560
+    y: 250
+    label: App
+  - id: sqldbA
+    type: sqldb
+    x: 560
+    y: 400
+    label: Primary DB
+  - id: regionB
+    type: region
+    x: 1040
+    y: 60
+    w: 640
+    h: 520
+    label: "Region: Secondary (DR)"
+  - id: azB
+    type: az
+    x: 1080
+    y: 130
+    w: 360
+    h: 420
+    label: AZ 1
+  - id: elbB
+    type: elb
+    x: 1120
+    y: 250
+  - id: instanceB
+    type: instance
+    x: 1280
+    y: 250
+    label: App (standby)
+  - id: sqldbB
+    type: sqldb
+    x: 1280
+    y: 400
+    label: Replica DB
+edges:
+  - from: dns
+    to: elbA
+    number: 1
+  - from: elbA
+    to: instanceA
+    number: 2
+  - from: instanceA
+    to: sqldbA
+    number: 3
+  - from: dns
+    to: elbB
+    number: 4
+    lineStyle: dashed
+  - from: sqldbA
+    to: sqldbB
+    number: 5
+    lineStyle: dashed
+  - from: elbB
+    to: instanceB
+    number: 6
+    lineStyle: dashed
+  - from: instanceB
+    to: sqldbB
+    number: 7
+    lineStyle: dashed

@@ -1,0 +1,77 @@
+id: secure-api
+name: Secured Public API
+title: "Public API with Identity, Secrets & Rate Limiting"
+nodes:
+  - id: extclient
+    type: extclient
+    x: 60
+    y: 340
+    label: 3rd-Party Client
+  - id: idprovider
+    type: idprovider
+    x: 60
+    y: 130
+    label: OAuth Provider
+  - id: apigw
+    type: apigw
+    x: 300
+    y: 340
+  - id: iam
+    type: iam
+    x: 300
+    y: 130
+    label: Token Validation
+  - id: ratelimiter
+    type: ratelimiter
+    x: 540
+    y: 130
+  - id: apiservice
+    type: apiservice
+    x: 540
+    y: 340
+    label: API Service
+  - id: secrets
+    type: secrets
+    x: 780
+    y: 130
+  - id: encryption
+    type: encryption
+    x: 780
+    y: 550
+    label: Encryption at Rest
+  - id: sqldb
+    type: sqldb
+    x: 1020
+    y: 340
+edges:
+  - from: extclient
+    to: idprovider
+    number: 1
+    lineStyle: dashed
+  - from: extclient
+    to: apigw
+    number: 2
+  - from: apigw
+    to: iam
+    number: 3
+  - from: iam
+    to: idprovider
+    number: 4
+    lineStyle: dashed
+  - from: apigw
+    to: ratelimiter
+    number: 5
+  - from: ratelimiter
+    to: apiservice
+    number: 6
+  - from: apiservice
+    to: secrets
+    number: 7
+  - from: apiservice
+    to: sqldb
+    number: 8
+  - from: sqldb
+    to: encryption
+    number: 9
+    lineStyle: dotted
+    arrowStyle: none

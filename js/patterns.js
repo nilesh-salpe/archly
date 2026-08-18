@@ -6,11 +6,26 @@
 
 // No server-side directory listing on static hosting (GitHub Pages included),
 // so the filenames are just listed here — add a line when adding a pattern.
-const PATTERN_FILES = ['3tier.yaml', 'microservices.yaml', 'cache-aside.yaml', 'ml.yaml', 'genai.yaml', 'rag.yaml'];
+const PATTERN_FILES = [
+  '3tier.yaml',
+  'microservices.yaml',
+  'cache-aside.yaml',
+  'ml.yaml',
+  'genai.yaml',
+  'rag.yaml',
+  'event-driven.yaml',
+  'job-queue.yaml',
+  'serverless.yaml',
+  'etl-pipeline.yaml',
+  'multi-region-dr.yaml',
+  'saga.yaml',
+  'multi-agent.yaml',
+  'secure-api.yaml',
+];
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '2';
+const ASSET_VERSION = '3';
 
 let PATTERNS = [];
 

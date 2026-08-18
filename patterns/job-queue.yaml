@@ -1,0 +1,78 @@
+id: job-queue
+name: Async Job Queue
+title: "Async Job Queue with Worker Pool"
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: apigw
+    type: apigw
+    x: 280
+    y: 340
+  - id: apiservice
+    type: apiservice
+    x: 520
+    y: 340
+    label: API Service
+  - id: jobdb
+    type: sqldb
+    x: 520
+    y: 130
+    label: Job DB
+  - id: queue
+    type: queue
+    x: 760
+    y: 340
+    label: Job Queue
+  - id: worker
+    type: worker
+    x: 1000
+    y: 340
+    label: Worker Pool
+  - id: retry
+    type: retry
+    x: 1000
+    y: 130
+  - id: s3
+    type: s3
+    x: 1240
+    y: 340
+    label: Job Output
+  - id: metrics
+    type: metrics
+    x: 760
+    y: 130
+    label: Queue Depth
+edges:
+  - from: user
+    to: apigw
+    number: 1
+  - from: apigw
+    to: apiservice
+    number: 2
+  - from: apiservice
+    to: jobdb
+    number: 3
+  - from: apiservice
+    to: queue
+    number: 4
+  - from: queue
+    to: worker
+    number: 5
+  - from: worker
+    to: s3
+    number: 6
+  - from: worker
+    to: retry
+    number: 7
+    lineStyle: dashed
+  - from: retry
+    to: queue
+    number: 8
+    lineStyle: dashed
+  - from: queue
+    to: metrics
+    number: 9
+    lineStyle: dotted
+    arrowStyle: none

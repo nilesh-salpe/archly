@@ -1,0 +1,87 @@
+id: event-driven
+name: Event-Driven / Pub-Sub
+title: "Event-Driven Architecture: Pub/Sub Fan-out"
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: apigw
+    type: apigw
+    x: 280
+    y: 340
+  - id: orderservice
+    type: microservice
+    x: 520
+    y: 340
+    label: Order Service
+  - id: orderdb
+    type: sqldb
+    x: 520
+    y: 130
+    label: Order DB
+  - id: kafka
+    type: kafka
+    x: 780
+    y: 340
+    label: Order Events
+  - id: notifyworker
+    type: worker
+    x: 1040
+    y: 130
+    label: Notification Worker
+  - id: analyticsworker
+    type: worker
+    x: 1040
+    y: 340
+    label: Analytics Worker
+  - id: fraudworker
+    type: worker
+    x: 1040
+    y: 550
+    label: Fraud Worker
+  - id: email
+    type: email
+    x: 1300
+    y: 130
+  - id: datalake
+    type: datalake
+    x: 1300
+    y: 340
+    label: Analytics Lake
+  - id: alerts
+    type: alerts
+    x: 1300
+    y: 550
+    label: Fraud Alerts
+edges:
+  - from: user
+    to: apigw
+    number: 1
+  - from: apigw
+    to: orderservice
+    number: 2
+  - from: orderservice
+    to: orderdb
+    number: 3
+  - from: orderservice
+    to: kafka
+    number: 4
+  - from: kafka
+    to: notifyworker
+    number: 5
+  - from: kafka
+    to: analyticsworker
+    number: 5
+  - from: kafka
+    to: fraudworker
+    number: 5
+  - from: notifyworker
+    to: email
+    number: 6
+  - from: analyticsworker
+    to: datalake
+    number: 6
+  - from: fraudworker
+    to: alerts
+    number: 6

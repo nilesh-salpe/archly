@@ -1,0 +1,93 @@
+id: multi-agent
+name: Multi-Agent GenAI System
+title: "Multi-Agent Orchestration"
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: webapp
+    type: webapp
+    x: 280
+    y: 340
+  - id: memory
+    type: memory
+    x: 280
+    y: 130
+    label: Shared Memory
+  - id: orchestratorAgent
+    type: agent
+    x: 540
+    y: 340
+    label: Orchestrator Agent
+  - id: guardrails
+    type: guardrails
+    x: 540
+    y: 550
+  - id: researchAgent
+    type: agent
+    x: 820
+    y: 130
+    label: Research Agent
+  - id: codeAgent
+    type: agent
+    x: 820
+    y: 340
+    label: Code Agent
+  - id: writerAgent
+    type: agent
+    x: 820
+    y: 550
+    label: Writer Agent
+  - id: searchTool
+    type: tool
+    x: 1080
+    y: 130
+    label: Web Search Tool
+  - id: codeTool
+    type: tool
+    x: 1080
+    y: 340
+    label: Code Sandbox
+  - id: modelprovider
+    type: modelprovider
+    x: 1340
+    y: 340
+    label: External LLM
+edges:
+  - from: user
+    to: webapp
+    number: 1
+  - from: webapp
+    to: orchestratorAgent
+    number: 2
+  - from: orchestratorAgent
+    to: memory
+    number: 3
+  - from: orchestratorAgent
+    to: guardrails
+    number: 3
+  - from: orchestratorAgent
+    to: researchAgent
+    number: 4
+  - from: orchestratorAgent
+    to: codeAgent
+    number: 4
+  - from: orchestratorAgent
+    to: writerAgent
+    number: 4
+  - from: researchAgent
+    to: searchTool
+    number: 5
+  - from: codeAgent
+    to: codeTool
+    number: 5
+  - from: researchAgent
+    to: modelprovider
+    number: 6
+  - from: codeAgent
+    to: modelprovider
+    number: 6
+  - from: writerAgent
+    to: modelprovider
+    number: 6

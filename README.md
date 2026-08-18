@@ -10,14 +10,22 @@ no build step, meant to run on GitHub Pages.
   Auto Scaling Groups, RDS, Cassandra, MongoDB, Neo4j, Vector DB, S3, Redis,
   Kafka, clients, and security components.
 - **Drag & drop** components onto the canvas, drag to reposition, resize
-  container boundaries.
+  container boundaries. Dragging snaps to a grid and to alignment with other
+  nodes (hold Alt to move freely); arrow keys nudge the selection.
+- **Multi-select** — shift-click or drag a selection box over multiple nodes
+  to move, copy, layer, or delete them together.
+- **Undo / redo** for every edit (Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z).
+- **Zoom & pan** — Ctrl/Cmd+scroll to zoom under the cursor, or use the
+  toolbar's +/−/Fit controls; rulers stay accurate at any zoom level.
 - **Numbered flow arrows** — drag from a node's connector dot to another node
   to draw an arrow; click its number badge to edit the request-flow order.
 - **Play the request flow** — animates a dot along each arrow in numbered
   order, pulsing the active nodes. Pause / Reset / Speed controls included.
-- **Pattern library** — load pre-built diagrams (3-Tier Web App, Microservices
-  + API Gateway, Cache-Aside) that render and auto-play.
-- **Export** the diagram as a PNG or SVG image.
+- **Pattern library** — 14 pre-built diagrams (3-Tier Web App, Microservices
+  + API Gateway, Cache-Aside, ML, GenAI, RAG, Event-Driven/Pub-Sub, Async Job
+  Queue, Serverless, Batch/ETL, Multi-Region DR, Saga, Multi-Agent GenAI,
+  Secured Public API), previewed with thumbnails in the Patterns dropdown.
+- **Export** the diagram as a PNG or SVG image, or as hand-editable YAML.
 - Work auto-saves to the browser's local storage.
 
 ## Running locally

@@ -1,0 +1,72 @@
+id: serverless
+name: Serverless / Event-Driven Compute
+title: "Serverless Application"
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: apigw
+    type: apigw
+    x: 300
+    y: 340
+  - id: auth
+    type: auth
+    x: 300
+    y: 130
+  - id: lambda
+    type: lambda
+    x: 560
+    y: 340
+    label: Handler Function
+  - id: nosqldb
+    type: nosqldb
+    x: 820
+    y: 340
+    label: Table
+  - id: s3
+    type: s3
+    x: 560
+    y: 130
+    label: Upload Bucket
+  - id: imagelambda
+    type: lambda
+    x: 820
+    y: 130
+    label: Image Processor
+  - id: eventbus
+    type: eventbus
+    x: 1080
+    y: 130
+    label: Event Bus
+  - id: email
+    type: email
+    x: 1320
+    y: 130
+edges:
+  - from: user
+    to: apigw
+    number: 1
+  - from: apigw
+    to: auth
+    number: 2
+  - from: apigw
+    to: lambda
+    number: 3
+  - from: lambda
+    to: nosqldb
+    number: 4
+  - from: user
+    to: s3
+    number: 5
+    lineStyle: dashed
+  - from: s3
+    to: imagelambda
+    number: 6
+    lineStyle: dashed
+  - from: imagelambda
+    to: eventbus
+    number: 7
+  - from: eventbus
+    to: email
+    number: 8

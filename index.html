@@ -8,7 +8,7 @@
      and every js/*.js below) so returning visitors' browsers fetch the new files
      instead of serving stale cached ones. See js/patterns.js's ASSET_VERSION for
      the matching bump on the patterns/*.yaml fetches. -->
-<link rel="stylesheet" href="css/styles.css?v=2" />
+<link rel="stylesheet" href="css/styles.css?v=3" />
 </head>
 <body>
   <div class="app">
@@ -19,14 +19,11 @@
       </div>
       <div class="toolbar">
         <button id="btn-new" class="btn" title="Clear the canvas and start a new diagram">Clear All</button>
+        <button id="btn-undo" class="btn" title="Undo (Ctrl/Cmd+Z)" disabled>&#8630; Undo</button>
+        <button id="btn-redo" class="btn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>&#8631; Redo</button>
         <button id="btn-view" class="btn" title="Toggle grid background and rulers">View &#9662;</button>
 
-        <label class="tb-group">
-          <span class="tb-label">Pattern</span>
-          <select id="pattern-select" class="select">
-            <option value="">Load a pattern&hellip;</option>
-          </select>
-        </label>
+        <button id="btn-pattern" class="btn" title="Load a pre-built pattern">Patterns &#9662;</button>
 
         <span class="tb-sep"></span>
 
@@ -48,8 +45,19 @@
 
         <span class="tb-sep"></span>
 
+        <div class="tb-group zoom-group">
+          <button id="btn-zoom-out" class="btn btn-icon" title="Zoom out (Ctrl/Cmd+scroll)">&#8722;</button>
+          <button id="zoom-label" class="btn btn-zoom-label" title="Reset zoom to 100%">100%</button>
+          <button id="btn-zoom-in" class="btn btn-icon" title="Zoom in (Ctrl/Cmd+scroll)">&#43;</button>
+          <button id="btn-zoom-fit" class="btn" title="Fit the whole diagram in view">Fit</button>
+        </div>
+
+        <span class="tb-sep"></span>
+
         <button id="btn-file" class="btn" title="Export or import a diagram">File &#9662;</button>
         <input type="file" id="import-yaml-input" accept=".yaml,.yml" style="display:none" />
+
+        <button id="btn-help" class="btn btn-help" title="Tips & keyboard shortcuts">?</button>
       </div>
     </header>
 
@@ -58,6 +66,7 @@
         <div class="palette-search-wrap">
           <input type="search" id="palette-search" class="palette-search" placeholder="Search components&hellip;" />
         </div>
+        <div id="palette-empty" class="palette-empty" style="display:none"></div>
         <!-- category sections populated by app.js from COMPONENTS -->
       </aside>
       <button id="btn-palette-tab" class="palette-tab" title="Show or hide the component palette">&laquo;</button>
@@ -66,8 +75,15 @@
         <div class="ruler-corner"></div>
         <div class="ruler-h" id="ruler-h"></div>
         <div class="ruler-v" id="ruler-v"></div>
+        <div id="empty-state" class="empty-state" style="display:none">
+          <div class="empty-state-card">
+            <p class="empty-state-title">Your canvas is empty</p>
+            <p class="empty-state-body">Drag a component from the left, or start from a pattern:</p>
+            <div class="empty-state-patterns" id="empty-state-patterns"></div>
+          </div>
+        </div>
         <div class="canvas-scroll" id="canvas-scroll">
-          <svg id="canvas" width="2400" height="1600" xmlns="http://www.w3.org/2000/svg">
+          <svg id="canvas" width="2400" height="1600" viewBox="0 0 2400 1600" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
                 <path d="M0,0 L10,5 L0,10 z" class="arrowhead-path"></path>
@@ -83,17 +99,17 @@
     </div>
 
     <footer class="hint" id="hint">
-      Drag a component onto the canvas. Click a name to rename it; drag its body to move it, or drag a connector dot onto another node to draw a numbered flow arrow. Right-click any component or arrow for more options (duplicate, layering, line/arrowhead style). Click to select, Delete to remove.
+      Drag a component onto the canvas. Click a name to rename it; drag its body to move it, or drag a connector dot onto another node to draw a numbered flow arrow — drag anywhere along an arrow's line to bend it. Shift-click or drag a selection box to select multiple nodes. Right-click any component or arrow for more options. Click <strong>?</strong> in the toolbar for tips & shortcuts.
     </footer>
   </div>
 
-  <script src="js/components.js?v=2"></script>
-  <script src="js/yaml.js?v=2"></script>
-  <script src="js/canvas.js?v=2"></script>
-  <script src="js/arrows.js?v=2"></script>
-  <script src="js/animate.js?v=2"></script>
-  <script src="js/patterns.js?v=2"></script>
-  <script src="js/export.js?v=2"></script>
-  <script src="js/app.js?v=2"></script>
+  <script src="js/components.js?v=3"></script>
+  <script src="js/yaml.js?v=3"></script>
+  <script src="js/canvas.js?v=3"></script>
+  <script src="js/arrows.js?v=3"></script>
+  <script src="js/animate.js?v=3"></script>
+  <script src="js/patterns.js?v=3"></script>
+  <script src="js/export.js?v=3"></script>
+  <script src="js/app.js?v=3"></script>
 </body>
 </html>

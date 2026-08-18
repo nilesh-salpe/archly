@@ -1,0 +1,80 @@
+id: saga
+name: Saga / Distributed Transaction
+title: "Saga Pattern with Compensating Actions"
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: apigw
+    type: apigw
+    x: 280
+    y: 340
+  - id: orchestrator
+    type: workflow
+    x: 520
+    y: 340
+    label: Saga Orchestrator
+  - id: orderSvc
+    type: instance
+    x: 800
+    y: 130
+    label: Order Service
+  - id: paymentSvc
+    type: instance
+    x: 800
+    y: 340
+    label: Payment Service
+  - id: inventorySvc
+    type: instance
+    x: 800
+    y: 550
+    label: Inventory Service
+  - id: orderdb
+    type: sqldb
+    x: 1060
+    y: 130
+    label: Order DB
+  - id: paymentdb
+    type: nosqldb
+    x: 1060
+    y: 340
+    label: Payment DB
+  - id: inventorydb
+    type: nosqldb
+    x: 1060
+    y: 550
+    label: Inventory DB
+edges:
+  - from: user
+    to: apigw
+    number: 1
+  - from: apigw
+    to: orchestrator
+    number: 2
+  - from: orchestrator
+    to: orderSvc
+    number: 3
+  - from: orderSvc
+    to: orderdb
+    number: 4
+  - from: orchestrator
+    to: paymentSvc
+    number: 5
+  - from: paymentSvc
+    to: paymentdb
+    number: 6
+  - from: orchestrator
+    to: inventorySvc
+    number: 7
+  - from: inventorySvc
+    to: inventorydb
+    number: 8
+  - from: inventorySvc
+    to: orchestrator
+    number: 9
+    lineStyle: dashed
+  - from: orchestrator
+    to: paymentSvc
+    number: 10
+    lineStyle: dashed

@@ -47,15 +47,37 @@ exports).
   rects. `textOnly: true` marks the freeform "Text" tool (transparent body,
   word-wrapped, auto-grows height — see `recomputeTextOnlyHeight` in
   `js/canvas.js`).
-- **`js/canvas.js`** — owns `state` (`{nodes, edges, selected}`) and all
-  rendering/interaction: drag-drop from palette, node drag/resize/rename,
+- **`js/canvas.js`** — owns `state` (`{nodes, edges, selected, multiIds}`) and
+  all rendering/interaction: drag-drop from palette, node drag/resize/rename,
   edge creation via connector handles, the right-click context menu builders
-  (`buildNodeMenuItems`/`buildEdgeMenuItems` — also reused by the toolbar's
-  "Edit ▾" dropdown so both stay in sync), copy/paste, layering
-  (bring-to-front/send-to-back via array order — SVG paints in document
-  order), view prefs (grid/rulers/palette-drawer, persisted to
-  `localStorage`), and the diagram autosave (`STORAGE_KEY`, also
-  `localStorage`).
+  (`buildNodeMenuItems`/`buildEdgeMenuItems`/`buildMultiSelectMenuItems` —
+  also reused by the toolbar's "Edit ▾" dropdown so both stay in sync),
+  copy/paste (single or multi-node, via `clipboardNodes`), layering
+  (bring-to-front/send-to-back via array order, plus `*Silent` variants for
+  bulk multi-select ops — SVG paints in document order), view prefs
+  (grid/rulers/palette-drawer, persisted to `localStorage`), and the diagram
+  autosave (`STORAGE_KEY`, also `localStorage`).
+  - **Multi-select**: `state.multiIds` is a `Set` of node ids selected via
+    shift-click (`toggleMultiSelect`) or a marquee drag on empty canvas
+    (`onCanvasPointerDown`/`onMarqueeMove`/`onMarqueeUp`). `state.selected`
+    stays the single-item selection and is `null` whenever `multiIds` holds
+    0 or 2+ nodes. Dragging any member of a multi-selection moves the whole
+    group (`startDragNode`'s `isGroupDrag` branch).
+  - **Snapping**: single-node drags snap to a 10px grid, or to alignment with
+    other nodes' edges/centers (drawn as `.align-guide` lines) when within
+    threshold — see `computeAlignmentSnap`/`snapToGrid` in the node-dragging
+    section. Hold Alt to bypass both. Group drags and container resizes are
+    grid-snapped only (no alignment guides).
+  - **Undo/redo**: `saveState()` is the single choke point every mutation
+    already calls, so it also pushes a JSON snapshot onto the `history`
+    array (`pushHistory`) — no other mutator needs to know about undo.
+    `undo()`/`redo()` walk `historyIndex` and restore via `restoreSnapshot()`.
+  - **Zoom**: `#canvas`'s `viewBox` stays fixed at `0 0 2400 1600`; zooming
+    only changes its CSS `width`/`height` (`applyZoom()`), so the browser
+    scales the coordinate system and `toSVGCoords()` (via `getScreenCTM()`)
+    keeps working unchanged for every pointer-math function. `export.js`
+    strips that inline style before export so exports are always full-res
+    regardless of on-screen zoom.
 - **`js/arrows.js`** — pure geometry: clips a line to each node's rect border,
   and computes one of three edge routings selected by `edge.routing`/
   `edge.curve`: straight (default), curved (either auto-bent when parallel
@@ -67,10 +89,14 @@ exports).
   dot via `getFlowDotFor`), and the engine waits for a whole group before
   advancing — this is what lets you show fan-out/parallel steps.
 - **`js/patterns.js`** — fetches and parses `patterns/*.yaml` at startup
-  (`loadPatternDefinitions`, awaited before the palette/pattern-select build
+  (`loadPatternDefinitions`, awaited before the palette/pattern-picker build
   in `js/app.js`). `PATTERN_FILES` is a hardcoded filename list (no directory
   listing on static hosting). Adding a pattern = add a YAML file here + one
-  line in `PATTERN_FILES`.
+  line in `PATTERN_FILES`. 14 patterns ship today (see `patterns/`); the
+  toolbar's Patterns ▾ button (`buildPatternPanel`/`buildPatternThumbnail` in
+  `js/app.js`) renders each as a small colored-rect thumbnail generated
+  straight from the pattern's node positions — no extra per-pattern asset
+  needed.
 - **`js/yaml.js`** — a minimal hand-written YAML reader/writer, scoped
   deliberately to block-style only (nested mappings, sequences-of-mappings,
   plain/quoted scalars, `#` comments). No flow style, anchors, multi-line
@@ -101,9 +127,31 @@ exports).
   only, unrelated to bending.
 - Selection actions (rename/duplicate/copy/layer/delete for nodes; line
   style/routing/arrowhead/protocol/delete for edges) live in exactly one
-  place — `buildNodeMenuItems`/`buildEdgeMenuItems` in `js/canvas.js` — and
-  are rendered by both the right-click context menu and the toolbar's
-  "Edit ▾" button. Extend those functions, not the callers.
+  place — `buildNodeMenuItems`/`buildEdgeMenuItems`/`buildMultiSelectMenuItems`
+  in `js/canvas.js` — and are rendered by both the right-click context menu
+  and the toolbar's "Edit ▾" button. Extend those functions, not the callers.
+- Multi-select: shift-click a node to add/remove it from the selection, or
+  drag from empty canvas for a marquee box (shift-drag adds to the existing
+  set). ⌘A selects all. Delete/duplicate/copy/layer act on the whole group;
+  dragging any selected node moves all of them together.
+- Undo/redo (⌘Z / ⌘⇧Z), arrow-key nudge (1px, 10px with Shift), and
+  Ctrl/⌘+scroll zoom are all global, not tied to any one element.
+
+## Onboarding surfaces
+
+Three UI surfaces exist purely to help a first-time user, independent of the
+diagram data model — worth knowing about before assuming the canvas is the
+only thing that needs updating for a UX change:
+
+- **Empty-canvas placeholder** (`#empty-state` in `index.html`, toggled in
+  `renderAll()`) — shown whenever `state.nodes` is empty, with quick-start
+  buttons for `QUICK_START_PATTERN_IDS` (`js/app.js`).
+- **Palette empty-search message** (`#palette-empty`) — toggled in
+  `filterPalette()` when a search matches nothing.
+- **Help panel** (`?` button, `js/app.js`'s `buildHelpPanel`/`toggleHelpPanel`)
+  — a static tips/shortcuts reference, auto-opened once on a visitor's first
+  load (`HELP_SEEN_KEY` in `localStorage`), reopenable anytime from the
+  toolbar.
 
 ## Deploying
 

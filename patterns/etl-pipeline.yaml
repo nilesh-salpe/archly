@@ -1,0 +1,64 @@
+id: etl-pipeline
+name: Batch / ETL Data Pipeline
+title: "Batch + Streaming ETL Pipeline"
+nodes:
+  - id: s3raw
+    type: s3
+    x: 60
+    y: 120
+    label: Raw Data (S3)
+  - id: batch
+    type: batch
+    x: 320
+    y: 120
+    label: Batch ETL Job
+  - id: kafka
+    type: kafka
+    x: 60
+    y: 380
+    label: Event Stream
+  - id: streamprocessor
+    type: streamprocessor
+    x: 320
+    y: 380
+    label: Stream Processor
+  - id: datalake
+    type: datalake
+    x: 600
+    y: 250
+  - id: lakehouse
+    type: lakehouse
+    x: 860
+    y: 250
+  - id: search
+    type: search
+    x: 1120
+    y: 120
+    label: Search Index
+  - id: timeseriesdb
+    type: timeseriesdb
+    x: 1120
+    y: 380
+    label: Metrics Store
+edges:
+  - from: s3raw
+    to: batch
+    number: 1
+  - from: batch
+    to: datalake
+    number: 2
+  - from: kafka
+    to: streamprocessor
+    number: 1
+  - from: streamprocessor
+    to: datalake
+    number: 2
+  - from: datalake
+    to: lakehouse
+    number: 3
+  - from: lakehouse
+    to: search
+    number: 4
+  - from: lakehouse
+    to: timeseriesdb
+    number: 4
