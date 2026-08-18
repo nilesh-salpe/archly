@@ -72,8 +72,18 @@ function buildPatternSelect() {
 
 function wireToolbar() {
   document.getElementById('btn-new').addEventListener('click', () => {
+    if (state.nodes.length && !confirm('Clear the entire diagram? This cannot be undone.')) return;
     resetFlow();
     clearDiagram();
+  });
+
+  document.getElementById('btn-view').addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const rect = ev.currentTarget.getBoundingClientRect();
+    showContextMenu(rect.left, rect.bottom + 4, [
+      { label: (showGrid ? '✓ ' : '   ') + 'Grid Background', action: toggleGrid },
+      { label: (showRulers ? '✓ ' : '   ') + 'Rulers', action: toggleRulers },
+    ]);
   });
 
   document.getElementById('btn-play').addEventListener('click', playFlow);
@@ -83,6 +93,17 @@ function wireToolbar() {
   document.getElementById('speed-select').addEventListener('change', (ev) => {
     playState.speedMs = parseInt(ev.target.value, 10);
   });
+
+  document.getElementById('btn-copy').addEventListener('click', copySelectedNode);
+  document.getElementById('btn-paste').addEventListener('click', () => pasteNode());
+  document.getElementById('btn-duplicate').addEventListener('click', duplicateSelected);
+  document.getElementById('btn-front').addEventListener('click', () => {
+    if (state.selected && state.selected.kind === 'node') bringToFront(state.selected.id);
+  });
+  document.getElementById('btn-back').addEventListener('click', () => {
+    if (state.selected && state.selected.kind === 'node') sendToBack(state.selected.id);
+  });
+  document.getElementById('btn-delete').addEventListener('click', deleteSelected);
 
   document.getElementById('btn-export-png').addEventListener('click', exportPNGFile);
   document.getElementById('btn-export-svg').addEventListener('click', exportSVGFile);

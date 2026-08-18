@@ -62,6 +62,66 @@ const PATTERNS = [
       { from: 'instance', to: 'rds', number: 4 },
     ],
   },
+  {
+    id: 'ml',
+    name: 'Machine Learning',
+    nodes: [
+      { id: 'dataset', type: 'dataset', x: 60, y: 120 },
+      { id: 'gpucluster', type: 'gpucluster', x: 320, y: 120 },
+      { id: 'model', type: 'model', x: 580, y: 120 },
+      { id: 'modelregistry', type: 'modelregistry', x: 840, y: 120 },
+      { id: 'user', type: 'user', x: 60, y: 400 },
+      { id: 'elb', type: 'elb', x: 320, y: 400 },
+      { id: 'instance', type: 'instance', x: 580, y: 400, label: 'Inference Service' },
+      { id: 'featurestore', type: 'featurestore', x: 840, y: 400 },
+    ],
+    edges: [
+      { from: 'dataset', to: 'gpucluster', number: 1 },
+      { from: 'gpucluster', to: 'model', number: 2 },
+      { from: 'model', to: 'modelregistry', number: 3 },
+      { from: 'user', to: 'elb', number: 4 },
+      { from: 'elb', to: 'instance', number: 5 },
+      { from: 'instance', to: 'featurestore', number: 6 },
+      { from: 'instance', to: 'modelregistry', number: 7 },
+    ],
+  },
+  {
+    id: 'genai',
+    name: 'GenAI Application',
+    nodes: [
+      { id: 'user', type: 'user', x: 60, y: 300 },
+      { id: 'webapp', type: 'webapp', x: 300, y: 300 },
+      { id: 'llmgateway', type: 'llmgateway', x: 540, y: 300 },
+      { id: 'guardrails', type: 'guardrails', x: 780, y: 300 },
+      { id: 'modelprovider', type: 'modelprovider', x: 1020, y: 300, label: 'Foundational Model Provider' },
+    ],
+    edges: [
+      { from: 'user', to: 'webapp', number: 1 },
+      { from: 'webapp', to: 'llmgateway', number: 2 },
+      { from: 'llmgateway', to: 'guardrails', number: 3 },
+      { from: 'guardrails', to: 'modelprovider', number: 4 },
+    ],
+  },
+  {
+    id: 'rag',
+    name: 'RAG Pipeline',
+    nodes: [
+      { id: 'user', type: 'user', x: 60, y: 300 },
+      { id: 'apigw', type: 'apigw', x: 290, y: 300 },
+      { id: 'agent', type: 'agent', x: 530, y: 300, label: 'Orchestrator' },
+      { id: 'embeddingmodel', type: 'embeddingmodel', x: 780, y: 140 },
+      { id: 'vectordb', type: 'vectordb', x: 1020, y: 140 },
+      { id: 'modelprovider', type: 'modelprovider', x: 780, y: 460, label: 'Foundational Model Provider' },
+    ],
+    edges: [
+      { from: 'user', to: 'apigw', number: 1 },
+      { from: 'apigw', to: 'agent', number: 2 },
+      { from: 'agent', to: 'embeddingmodel', number: 3 },
+      { from: 'embeddingmodel', to: 'vectordb', number: 4 },
+      { from: 'vectordb', to: 'agent', number: 5 },
+      { from: 'agent', to: 'modelprovider', number: 6 },
+    ],
+  },
 ];
 
 function getPattern(id) {
@@ -86,6 +146,7 @@ function loadPattern(id) {
       label: spec.label || def.label,
       icon: def.icon,
       container: !!def.container,
+      textOnly: !!def.textOnly,
       x: spec.x,
       y: spec.y,
       w,
@@ -101,6 +162,8 @@ function loadPattern(id) {
     from: idMap[e.from],
     to: idMap[e.to],
     number: e.number,
+    lineStyle: 'solid',
+    arrowStyle: 'end',
   }));
 
   loadDiagram(nodes, edges, nid, edges.length + 1);

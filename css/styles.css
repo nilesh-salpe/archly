@@ -176,12 +176,21 @@ html, body {
 
 .canvas-wrap {
   flex: 1;
-  overflow: auto;
   position: relative;
+  overflow: hidden;
+}
+
+.canvas-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
   background-color: var(--canvas-bg);
   background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
   background-size: 22px 22px;
 }
+
+.canvas-wrap.no-grid .canvas-scroll { background-image: none; }
+.canvas-wrap.rulers-on .canvas-scroll { top: 22px; left: 22px; }
 
 #canvas { display: block; }
 
@@ -201,6 +210,7 @@ html, body {
   font-size: 13px;
   font-weight: 600;
   fill: #64748b;
+  pointer-events: none;
 }
 
 .resize-handle {
@@ -236,6 +246,16 @@ html, body {
   font-weight: 500;
 }
 
+.label-hit {
+  fill: transparent;
+  cursor: text;
+}
+
+.text-node-label {
+  font-size: 16px;
+  font-weight: 600;
+}
+
 .handle {
   fill: var(--accent);
   opacity: 0;
@@ -251,10 +271,12 @@ html, body {
 .handle:hover { r: 6; }
 
 .edge-path {
+  /* marker-start / marker-end / stroke-dasharray are set inline per edge in
+     canvas.js (applyEdgeStyle), since they vary per edge (arrowhead + line
+     style) rather than being a fixed rule for all edges. */
   fill: none;
   stroke: #64748b;
   stroke-width: 2;
-  marker-end: url(#arrowhead);
 }
 
 .arrowhead-path { fill: #64748b; }
@@ -342,6 +364,127 @@ html, body {
   color: var(--text);
   z-index: 50;
 }
+
+/* Inline text editor for renaming a node/container label */
+
+.name-editor {
+  position: fixed;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text);
+  z-index: 50;
+}
+
+/* ---------- Context menus & dropdowns (right-click menu, View menu) ---------- */
+
+.context-menu {
+  position: fixed;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  z-index: 60;
+  font-size: 13px;
+  user-select: none;
+}
+
+.context-menu-item {
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text);
+  white-space: pre;
+}
+
+.context-menu-item:hover { background: var(--bg); }
+
+.context-menu-item.heading {
+  cursor: default;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  padding-top: 8px;
+}
+.context-menu-item.heading:hover { background: none; }
+
+.context-menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--chrome-border);
+}
+
+/* ---------- Rulers ---------- */
+
+.ruler-corner,
+.ruler-h,
+.ruler-v {
+  display: none;
+}
+
+.canvas-wrap.rulers-on .ruler-corner,
+.canvas-wrap.rulers-on .ruler-h,
+.canvas-wrap.rulers-on .ruler-v {
+  display: block;
+}
+
+.ruler-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  background: var(--chrome-bg);
+  border-right: 1px solid var(--chrome-border);
+  border-bottom: 1px solid var(--chrome-border);
+  z-index: 5;
+}
+
+.ruler-h,
+.ruler-v {
+  position: absolute;
+  background: var(--chrome-bg);
+  overflow: hidden;
+  z-index: 4;
+}
+
+.ruler-h {
+  top: 0;
+  left: 22px;
+  right: 0;
+  height: 22px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.ruler-v {
+  top: 22px;
+  left: 0;
+  bottom: 0;
+  width: 22px;
+  border-right: 1px solid var(--chrome-border);
+}
+
+.ruler-tick {
+  position: absolute;
+  font-size: 9px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.ruler-h .ruler-tick { top: 3px; transform: translateX(-50%); }
+.ruler-v .ruler-tick { left: 3px; transform-origin: left top; transform: rotate(-90deg) translateX(-100%); }
+
+.ruler-tick-line { position: absolute; background: var(--chrome-border); }
+.ruler-h .ruler-tick-line { top: 16px; width: 1px; height: 6px; }
+.ruler-v .ruler-tick-line { left: 16px; height: 1px; width: 6px; }
 
 /* ---------- Footer hint ---------- */
 

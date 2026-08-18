@@ -27,9 +27,10 @@ function computeContentBBox() {
 const EXPORT_STYLE = `
   .node-icon { stroke: #1e293b; stroke-width: 1.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .node-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 12px; fill: #1e293b; text-anchor: middle; font-weight: 500; }
+  .text-node-label { font-size: 16px; font-weight: 600; }
   .container-rect { fill: rgba(148, 163, 184, 0.08); stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 6 4; }
   .container-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #64748b; }
-  .edge-path { fill: none; stroke: #64748b; stroke-width: 2; marker-end: url(#arrowhead); }
+  .edge-path { fill: none; stroke: #64748b; stroke-width: 2; }
   .arrowhead-path { fill: #64748b; }
   .edge-badge circle { fill: #ffffff; stroke: #64748b; stroke-width: 1.5; }
   .edge-badge text { fill: #334155; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
@@ -38,7 +39,7 @@ const EXPORT_STYLE = `
 function buildExportSVG() {
   const bbox = computeContentBBox();
   const clone = svg.cloneNode(true);
-  clone.querySelectorAll('.no-export, .handle, .resize-handle').forEach((elx) => elx.remove());
+  clone.querySelectorAll('.no-export, .handle, .resize-handle, .label-hit').forEach((elx) => elx.remove());
   clone.querySelectorAll('.selected').forEach((elx) => elx.classList.remove('selected'));
   clone.querySelectorAll('.flow-active').forEach((elx) => elx.classList.remove('flow-active'));
 

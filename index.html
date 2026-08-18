@@ -14,7 +14,8 @@
         <span>System Design Studio</span>
       </div>
       <div class="toolbar">
-        <button id="btn-new" class="btn" title="Clear the canvas and start a new diagram">New</button>
+        <button id="btn-new" class="btn" title="Clear the canvas and start a new diagram">Clear All</button>
+        <button id="btn-view" class="btn" title="Toggle grid background and rulers">View &#9662;</button>
 
         <label class="tb-group">
           <span class="tb-label">Pattern</span>
@@ -39,6 +40,15 @@
 
         <span class="tb-sep"></span>
 
+        <button id="btn-copy" class="btn" title="Copy the selected component (Ctrl/Cmd+C)" disabled>Copy</button>
+        <button id="btn-paste" class="btn" title="Paste (Ctrl/Cmd+V)" disabled>Paste</button>
+        <button id="btn-duplicate" class="btn" title="Duplicate the selected component (Ctrl/Cmd+D)" disabled>Duplicate</button>
+        <button id="btn-front" class="btn" title="Bring to front ( ] )" disabled>Front</button>
+        <button id="btn-back" class="btn" title="Send to back ( [ )" disabled>Back</button>
+        <button id="btn-delete" class="btn" title="Delete the selection (Delete)" disabled>Delete</button>
+
+        <span class="tb-sep"></span>
+
         <button id="btn-export-png" class="btn" title="Export the diagram as a PNG image">Export PNG</button>
         <button id="btn-export-svg" class="btn" title="Export the diagram as an SVG image">Export SVG</button>
       </div>
@@ -50,22 +60,27 @@
       </aside>
 
       <main class="canvas-wrap" id="canvas-wrap">
-        <svg id="canvas" width="2400" height="1600" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" class="arrowhead-path"></path>
-            </marker>
-          </defs>
-          <g id="layer-containers"></g>
-          <g id="layer-edges"></g>
-          <g id="layer-nodes"></g>
-          <g id="layer-overlay" class="no-export"></g>
-        </svg>
+        <div class="ruler-corner"></div>
+        <div class="ruler-h" id="ruler-h"></div>
+        <div class="ruler-v" id="ruler-v"></div>
+        <div class="canvas-scroll" id="canvas-scroll">
+          <svg id="canvas" width="2400" height="1600" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" class="arrowhead-path"></path>
+              </marker>
+            </defs>
+            <g id="layer-containers"></g>
+            <g id="layer-edges"></g>
+            <g id="layer-nodes"></g>
+            <g id="layer-overlay" class="no-export"></g>
+          </svg>
+        </div>
       </main>
     </div>
 
     <footer class="hint" id="hint">
-      Drag a component onto the canvas. Hover a node to reveal connector dots, then drag one onto another node to draw a numbered flow arrow. Click a node or arrow to select it; press Delete to remove it.
+      Drag a component onto the canvas. Click a name to rename it; drag its body to move it, or drag a connector dot onto another node to draw a numbered flow arrow. Right-click any component or arrow for more options (duplicate, layering, line/arrowhead style). Click to select, Delete to remove.
     </footer>
   </div>
 

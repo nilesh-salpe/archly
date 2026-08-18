@@ -8,6 +8,8 @@ const CATEGORY_COLORS = {
   storage: '#10b981',
   client: '#8b5cf6',
   security: '#ef4444',
+  ai: '#0d9488',
+  general: '#64748b',
 };
 
 // Node cards stay light-pastel regardless of page theme (like cards on a
@@ -18,6 +20,8 @@ const CATEGORY_FILLS = {
   storage: '#d1fae5',
   client: '#ede9fe',
   security: '#fee2e2',
+  ai: '#ccfbf1',
+  general: '#f1f5f9',
 };
 
 const CATEGORY_LABELS = {
@@ -26,6 +30,8 @@ const CATEGORY_LABELS = {
   storage: 'Storage & Data',
   client: 'Client',
   security: 'Security',
+  ai: 'AI / ML',
+  general: 'General',
 };
 
 // Icon fragments, viewBox-local coordinates 0..24. Kept intentionally simple
@@ -59,6 +65,23 @@ const ICONS = {
   mobileapp: `<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M10.5 19h3" />`,
   iam: `<circle cx="9" cy="9" r="4.2"/><path d="M12.1 11.9L20 19.8M16.5 15.3l2.3-2.3M19 17.8l2.3-2.3" fill="none"/>`,
   secgroup: `<path d="M12 3.5l7 2.6v6c0 4.6-3 7.6-7 8.4-4-0.8-7-3.8-7-8.4v-6z"/><circle cx="12" cy="11" r="2.2"/><path d="M12 13.2v3" fill="none"/>`,
+  // AI / ML
+  llmgateway: `<rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M9 9.5v5l4-2.5z" fill="currentColor" stroke="none"/><path d="M18 3.5v3M16.5 5h3" fill="none"/>`,
+  modelprovider: `<path d="M6.5 17a3.5 3.5 0 0 1-.4-6.98 4.5 4.5 0 0 1 8.6-2.02A4 4 0 0 1 18.5 12a3.5 3.5 0 0 1-.3 7z"/><circle cx="11.5" cy="13.2" r="1.3" fill="currentColor" stroke="none"/>`,
+  model: `<circle cx="5" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="5" cy="17" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="19" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="17" r="1.6" fill="currentColor" stroke="none"/><path d="M5 7l7 5M5 17l7-5M12 12l7-5M12 12l7 5" fill="none"/>`,
+  embeddingmodel: `<path d="M7 4H5v16h2M17 4h2v16h-2" fill="none"/><circle cx="9.5" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="14.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>`,
+  agent: `<rect x="5" y="7" width="14" height="11" rx="2.5"/><circle cx="9.5" cy="12.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="14.5" cy="12.5" r="1.3" fill="currentColor" stroke="none"/><path d="M12 7V4M9.5 4h5" fill="none"/>`,
+  prompttemplate: `<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M8 8h8M8 11h5"/><path d="M9 15.3c-1 0-1 0.9-1 1.2 0 0.3 0 1.2 1 1.2M15 15.3c1 0 1 0.9 1 1.2 0 0.3 0 1.2-1 1.2" fill="none"/>`,
+  guardrails: `<path d="M12 3.5l7 2.6v6c0 4.6-3 7.6-7 8.4-4-0.8-7-3.8-7-8.4v-6z"/><path d="M7.8 10.6h8.4M7.8 13.6h8.4" fill="none"/>`,
+  dataset: `<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 8.8h16M4 12h16M4 15.2h16"/>`,
+  featurestore: `<rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M9.3 4v16M14.7 4v16"/><circle cx="6.5" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="17.5" cy="7" r="1" fill="currentColor" stroke="none"/>`,
+  modelregistry: `<rect x="4" y="7" width="14" height="13" rx="1.5"/><path d="M4 11h14"/><path d="M14 3.5l5 5-2.5 2.5-5-5z"/><circle cx="17.3" cy="5.3" r="0.9" fill="currentColor" stroke="none"/>`,
+  gpucluster: `<rect x="7" y="7" width="10" height="10" rx="1"/><path d="M9 7V4M12 7V4M15 7V4M9 20v-3M12 20v-3M15 20v-3M7 9H4M7 12H4M7 15H4M20 9h-3M20 12h-3M20 15h-3" fill="none"/>`,
+  // General / freeform toolbox
+  box: `<rect x="4" y="4" width="16" height="16" rx="1.5"/>`,
+  group: `<rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke-dasharray="3 2"/>`,
+  note: `<path d="M5 3.5h11l3 3v14H5z"/><path d="M16 3.5v3h3" fill="none"/><path d="M8 10h8M8 13h8M8 16h5"/>`,
+  text: `<path d="M5 5h14M12 5v14M9 19h6" fill="none"/>`,
 };
 
 // Component catalog. `container: true` marks the boundary/grouping shapes
@@ -97,6 +120,23 @@ const COMPONENTS = [
   // Security
   { id: 'iam', category: 'security', label: 'IAM', icon: 'iam' },
   { id: 'secgroup', category: 'security', label: 'Security Group', icon: 'secgroup' },
+  // AI / ML
+  { id: 'llmgateway', category: 'ai', label: 'LLM Gateway', icon: 'llmgateway' },
+  { id: 'modelprovider', category: 'ai', label: 'Foundational Model Provider', icon: 'modelprovider' },
+  { id: 'model', category: 'ai', label: 'Model', icon: 'model' },
+  { id: 'embeddingmodel', category: 'ai', label: 'Embedding Model', icon: 'embeddingmodel' },
+  { id: 'agent', category: 'ai', label: 'Agent / Orchestrator', icon: 'agent' },
+  { id: 'prompttemplate', category: 'ai', label: 'Prompt Template', icon: 'prompttemplate' },
+  { id: 'guardrails', category: 'ai', label: 'Guardrails', icon: 'guardrails' },
+  { id: 'dataset', category: 'ai', label: 'Training Dataset', icon: 'dataset' },
+  { id: 'featurestore', category: 'ai', label: 'Feature Store', icon: 'featurestore' },
+  { id: 'modelregistry', category: 'ai', label: 'Model Registry', icon: 'modelregistry' },
+  { id: 'gpucluster', category: 'ai', label: 'GPU / Training Cluster', icon: 'gpucluster' },
+  // General / freeform toolbox — plain shapes you name yourself
+  { id: 'box', category: 'general', label: 'Box', icon: 'box' },
+  { id: 'group', category: 'general', label: 'Group', icon: 'group', container: true, w: 260, h: 180 },
+  { id: 'note', category: 'general', label: 'Note', icon: 'note' },
+  { id: 'text', category: 'general', label: 'Text', icon: 'text', textOnly: true, w: 140, h: 44 },
 ];
 
 function getComponent(id) {
