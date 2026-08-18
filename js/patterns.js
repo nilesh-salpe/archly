@@ -8,13 +8,17 @@
 // so the filenames are just listed here — add a line when adding a pattern.
 const PATTERN_FILES = ['3tier.yaml', 'microservices.yaml', 'cache-aside.yaml', 'ml.yaml', 'genai.yaml', 'rag.yaml'];
 
+// Cache-busting for the pattern fetches below — keep this in sync with the
+// ?v= bumped on index.html's <script>/<link> tags on every deploy.
+const ASSET_VERSION = '1';
+
 let PATTERNS = [];
 
 async function loadPatternDefinitions() {
   const loaded = await Promise.all(
     PATTERN_FILES.map(async (file) => {
       try {
-        const res = await fetch(`patterns/${file}`);
+        const res = await fetch(`patterns/${file}?v=${ASSET_VERSION}`);
         if (!res.ok) throw new Error(`${file}: HTTP ${res.status}`);
         return parseYAML(await res.text());
       } catch (e) {
