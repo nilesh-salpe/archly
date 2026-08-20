@@ -8,7 +8,7 @@
      and every js/*.js below) so returning visitors' browsers fetch the new files
      instead of serving stale cached ones. See js/patterns.js's ASSET_VERSION for
      the matching bump on the patterns/*.yaml fetches. -->
-<link rel="stylesheet" href="css/styles.css?v=25" />
+<link rel="stylesheet" href="css/styles.css?v=28" />
 </head>
 <body>
   <div class="app">
@@ -60,25 +60,26 @@
         <button id="btn-pattern" class="btn btn-iconlabel" aria-label="Patterns"><span class="btn-icon-glyph">&#9638;</span><span class="btn-label">Patterns</span></button>
 
         <span class="tb-sep"></span>
-        <button id="btn-undo" class="btn" title="Undo (Ctrl/Cmd+Z)" disabled>&#8630; Undo</button>
-        <button id="btn-redo" class="btn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>&#8631; Redo</button>
+        <button id="btn-undo" class="btn btn-iconlabel" aria-label="Undo (Ctrl/Cmd+Z)" disabled><span class="btn-icon-glyph">&#8630;</span><span class="btn-label">Undo</span></button>
+        <button id="btn-redo" class="btn btn-iconlabel" aria-label="Redo (Ctrl/Cmd+Shift+Z)" disabled><span class="btn-icon-glyph">&#8631;</span><span class="btn-label">Redo</span></button>
 
         <span class="tb-sep"></span>
-        <button id="btn-play" class="btn btn-accent" title="Animate the request flow in arrow order">&#9654; Play</button>
-        <button id="btn-pause" class="btn" title="Pause after the current step">&#10074;&#10074; Pause</button>
-        <button id="btn-reset" class="btn" title="Reset the flow animation">&#8634; Reset</button>
-        <label class="tb-group">
-          <span class="tb-label">Speed</span>
+        <button id="btn-play" class="btn btn-accent btn-iconlabel" aria-label="Animate the request flow in arrow order"><span class="btn-icon-glyph">&#9654;</span><span class="btn-label">Play</span></button>
+        <button id="btn-pause" class="btn btn-iconlabel" aria-label="Pause after the current step"><span class="btn-icon-glyph">&#10074;&#10074;</span><span class="btn-label">Pause</span></button>
+        <button id="btn-reset" class="btn btn-iconlabel" aria-label="Reset the flow animation"><span class="btn-icon-glyph">&#8634;</span><span class="btn-label">Reset</span></button>
+        <label class="tb-group" aria-label="Playback speed">
+          <span class="btn-icon-glyph">&#9201;</span>
           <select id="speed-select" class="select">
             <option value="1600">Slow</option>
             <option value="900" selected>Normal</option>
             <option value="450">Fast</option>
           </select>
+          <span class="btn-label">Speed</span>
         </label>
 
         <span class="tb-sep"></span>
-        <button id="btn-view" class="btn" title="Toggle grid background, rulers, and simulation">View &#9662;</button>
-        <button id="btn-edit" class="btn" title="Edit the current selection (also available by right-click)" disabled>Edit &#9662;</button>
+        <button id="btn-view" class="btn btn-iconlabel" aria-label="Toggle grid background, rulers, and simulation"><span class="btn-icon-glyph">&#9744;</span><span class="btn-label">View</span></button>
+        <button id="btn-edit" class="btn btn-iconlabel" aria-label="Edit the current selection (also available by right-click)" disabled><span class="btn-icon-glyph">&#9998;</span><span class="btn-label">Edit</span></button>
         <button id="btn-results-toggle" class="btn btn-iconlabel" aria-label="Simulation results"><span class="btn-icon-glyph">&#9636;</span><span class="btn-label">Results</span></button>
 
         <span class="tb-sep"></span>
@@ -116,14 +117,14 @@
     </div>
   </div>
 
-  <script src="js/components.js?v=25"></script>
-  <script src="js/yaml.js?v=25"></script>
-  <script src="js/canvas.js?v=25"></script>
-  <script src="js/arrows.js?v=25"></script>
-  <script src="js/animate.js?v=25"></script>
-  <script src="js/simulate.js?v=25"></script>
-  <script src="js/patterns.js?v=25"></script>
-  <script src="js/export.js?v=25"></script>
-  <script src="js/app.js?v=25"></script>
+  <script src="js/components.js?v=28"></script>
+  <script src="js/yaml.js?v=28"></script>
+  <script src="js/canvas.js?v=28"></script>
+  <script src="js/arrows.js?v=28"></script>
+  <script src="js/animate.js?v=28"></script>
+  <script src="js/simulate.js?v=28"></script>
+  <script src="js/patterns.js?v=28"></script>
+  <script src="js/export.js?v=28"></script>
+  <script src="js/app.js?v=28"></script>
 </body>
 </html>

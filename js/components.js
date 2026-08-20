@@ -364,7 +364,11 @@ const COMPONENTS = [
   // General / freeform toolbox — plain shapes you name yourself
   { id: 'box', category: 'general', label: 'Box', icon: 'box' },
   { id: 'group', category: 'general', label: 'Group', icon: 'group', container: true, w: 260, h: 180 },
-  { id: 'note', category: 'general', label: 'Note', icon: 'note' },
+  // textOnly gives Note the same auto-growing multi-line textarea editing
+  // as the Text tool below (see openLabelEditor/recomputeTextOnlyHeight,
+  // canvas.js) — it keeps its own sticky-note color instead of Text's
+  // transparent body (isNote check in renderRegularNode, canvas.js).
+  { id: 'note', category: 'general', label: 'Note', icon: 'note', textOnly: true, w: 200, h: 100 },
   { id: 'text', category: 'general', label: 'Text', icon: 'text', textOnly: true, w: 140, h: 44 },
   { id: 'image', category: 'general', label: 'Image', icon: 'image', imageOnly: true, w: 220, h: 150 },
 ];

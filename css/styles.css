@@ -71,10 +71,12 @@ html, body {
   max-width: calc(100vw - 24px);
   overflow-x: auto;
   padding: 8px 10px;
-  background: var(--chrome-bg);
-  border: 1px solid var(--chrome-border);
-  border-radius: 10px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  /* Transparent by design — no enclosing card. Each .btn already carries its
+     own opaque surface/border/shadow, so the row reads as a cluster of
+     floating pills over the canvas rather than a solid toolbar. */
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 body[data-toolbar-pos='top'] .toolbar-bar { top: 12px; bottom: auto; }
@@ -210,11 +212,15 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
   font-variant-numeric: tabular-nums;
 }
 
-/* Toolbar buttons that stay icon-only (keeps the single-row toolbar compact)
-   but reveal their name as a custom tooltip-style label on hover/focus,
-   instead of relying only on a native title tooltip's slow default delay —
-   see aria-label (not title, to avoid a second native tooltip stacking on
-   top of this one) on these buttons in index.html. */
+/* Every top-toolbar control is icon-only (keeps the single-row toolbar
+   compact) and reveals its name as a custom tooltip-style label only while
+   Alt/Option is held (body.alt-held, toggled by a global keydown/keyup
+   listener — see initCanvas in canvas.js) — not on casual hover, so
+   glancing across the row never pops up a flurry of labels. Kept on
+   keyboard :focus-visible too, as a distinct deliberate interaction, for
+   users tabbing through the toolbar without a mouse. See aria-label (not
+   title, to avoid a second native tooltip stacking on top of this one) on
+   these buttons in index.html. */
 .btn-iconlabel {
   position: relative;
   width: 30px;
@@ -222,12 +228,17 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
   text-align: center;
 }
 
+.tb-group {
+  position: relative;
+}
+
 .btn-icon-glyph {
   font-size: 15px;
   line-height: 1;
 }
 
-.btn-iconlabel .btn-label {
+.btn-iconlabel .btn-label,
+.tb-group .btn-label {
   position: absolute;
   left: 50%;
   top: 100%;
@@ -247,15 +258,18 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
   z-index: 20;
 }
 
-body[data-toolbar-pos='bottom'] .btn-iconlabel .btn-label {
+body[data-toolbar-pos='bottom'] .btn-iconlabel .btn-label,
+body[data-toolbar-pos='bottom'] .tb-group .btn-label {
   top: auto;
   bottom: 100%;
   margin-top: 0;
   margin-bottom: 6px;
 }
 
-.btn-iconlabel:hover .btn-label,
-.btn-iconlabel:focus-visible .btn-label {
+.btn-iconlabel:focus-visible .btn-label,
+.tb-group:focus-within .btn-label,
+body.alt-held .btn-iconlabel .btn-label,
+body.alt-held .tb-group .btn-label {
   opacity: 1;
 }
 
@@ -279,10 +293,12 @@ body[data-toolbar-pos='bottom'] .btn-iconlabel .btn-label {
   z-index: 9;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--chrome-bg);
-  border: 1px solid var(--chrome-border);
-  border-radius: 10px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  /* Transparent by design, matching .toolbar-bar/.tb-zoom — the search box
+     keeps its own opaque surface (see .palette-search) and items highlight
+     on hover, so it stays usable without an enclosing card. */
+  background: transparent;
+  border: none;
+  box-shadow: none;
   padding: 10px;
   transition: transform 0.18s ease, opacity 0.18s ease;
 }

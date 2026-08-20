@@ -60,6 +60,20 @@ function initCanvas() {
     hideColorPanel();
   });
 
+  // Holding Alt/Option reveals every icon-only toolbar button's name at
+  // once (body.alt-held, styles.css) — a separate, always-live pair of
+  // listeners rather than folded into onKeyDown, since that handler
+  // early-returns while typing in an input/textarea and this should work
+  // regardless of focus. 'blur' is the safety net for Alt+Tab (switches
+  // windows without ever firing keyup here) leaving labels stuck open.
+  window.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Alt') document.body.classList.add('alt-held');
+  });
+  window.addEventListener('keyup', (ev) => {
+    if (ev.key === 'Alt') document.body.classList.remove('alt-held');
+  });
+  window.addEventListener('blur', () => document.body.classList.remove('alt-held'));
+
   loadState();
   loadPrefs();
   loadSimPrefs();
@@ -508,6 +522,17 @@ function zoomIn() { setZoom(zoomLevel + ZOOM_STEP); }
 function zoomOut() { setZoom(zoomLevel - ZOOM_STEP); }
 function zoomReset() { setZoom(1); }
 
+function cssVarPx(name, fallback) {
+  const n = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+// Fits the diagram into whatever screen space *isn't* covered by the
+// floating chrome — toolbar, brand mark, zoom strip, and the palette/results
+// panel when open — so a fitted diagram never ends up sitting underneath
+// any of it. Reuses the same clearance custom properties styles.css uses to
+// keep those panels off each other's corners (kept in sync by
+// syncToolbarClearance()) rather than re-deriving the numbers.
 function zoomToFit() {
   if (!state.nodes.length) { zoomReset(); return; }
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -517,14 +542,28 @@ function zoomToFit() {
     maxX = Math.max(maxX, n.x + n.w);
     maxY = Math.max(maxY, n.y + n.h);
   }
-  const pad = 60;
+  const pad = 40;
+
+  const toolbarClearance = cssVarPx('--toolbar-clearance', 64);
+  const brandClearance = cssVarPx('--brand-clearance', 58);
+  const zoombarClearance = cssVarPx('--zoombar-clearance', 58);
+  const topInset = toolbarPosition === 'top' ? Math.max(toolbarClearance, brandClearance) : brandClearance;
+  const bottomInset = toolbarPosition === 'bottom' ? Math.max(toolbarClearance, zoombarClearance) : zoombarClearance;
+  const paletteEl = document.getElementById('palette');
+  const resultsEl = document.getElementById('results-panel');
+  const leftInset = showPalette && paletteEl ? Math.ceil(paletteEl.getBoundingClientRect().width) + 24 : 12;
+  const rightInset = showResultsPanel && resultsEl ? Math.ceil(resultsEl.getBoundingClientRect().width) + 24 : 12;
+
+  const availW = Math.max(100, canvasScroll.clientWidth - leftInset - rightInset);
+  const availH = Math.max(100, canvasScroll.clientHeight - topInset - bottomInset);
+
   const w = maxX - minX + pad * 2;
   const h = maxY - minY + pad * 2;
-  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(canvasScroll.clientWidth / w, canvasScroll.clientHeight / h)));
+  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(availW / w, availH / h)));
   zoomLevel = z;
   applyZoom();
-  canvasScroll.scrollLeft = (minX - pad) * z;
-  canvasScroll.scrollTop = (minY - pad) * z;
+  canvasScroll.scrollLeft = (minX - pad) * z - leftInset;
+  canvasScroll.scrollTop = (minY - pad) * z - topInset;
 }
 
 function onCanvasWheel(ev) {
@@ -639,39 +678,49 @@ function textWidth(str, fontSize, fontWeight) {
   return measureCtx.measureText(str).width;
 }
 
+// Wraps by width within each paragraph, but treats a literal newline (from
+// the textOnly textarea editor — see openLabelEditor) as a forced line
+// break rather than just more whitespace to collapse, so a note's own line
+// structure (a title line, a blank line, a bulleted list, …) survives
+// instead of being reflowed into one continuous paragraph.
 function wrapText(text, maxWidth, fontSize, fontWeight) {
   if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
   measureCtx.font = fontString(fontSize, fontWeight);
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [''];
 
   const lines = [];
-  let current = '';
-  for (const word of words) {
-    if (!current && measureCtx.measureText(word).width > maxWidth) {
-      // A single word longer than the box — hard-break it by character.
-      let piece = '';
-      for (const ch of word) {
-        if (piece && measureCtx.measureText(piece + ch).width > maxWidth) {
-          lines.push(piece);
-          piece = ch;
-        } else {
-          piece += ch;
-        }
-      }
-      current = piece;
+  for (const paragraph of text.split('\n')) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      lines.push('');
       continue;
     }
-    const test = current ? `${current} ${word}` : word;
-    if (measureCtx.measureText(test).width <= maxWidth) {
-      current = test;
-    } else {
-      lines.push(current);
-      current = word;
+    let current = '';
+    for (const word of words) {
+      if (!current && measureCtx.measureText(word).width > maxWidth) {
+        // A single word longer than the box — hard-break it by character.
+        let piece = '';
+        for (const ch of word) {
+          if (piece && measureCtx.measureText(piece + ch).width > maxWidth) {
+            lines.push(piece);
+            piece = ch;
+          } else {
+            piece += ch;
+          }
+        }
+        current = piece;
+        continue;
+      }
+      const test = current ? `${current} ${word}` : word;
+      if (measureCtx.measureText(test).width <= maxWidth) {
+        current = test;
+      } else {
+        lines.push(current);
+        current = word;
+      }
     }
+    lines.push(current);
   }
-  if (current) lines.push(current);
-  return lines;
+  return lines.length ? lines : [''];
 }
 
 // Wraps then clamps to maxLines, ellipsizing the last visible line — used for
@@ -788,11 +837,14 @@ function renderRegularNode(n) {
   if (isNodeSelected(n.id)) g.classList.add('selected');
   if (n.textOnly) g.classList.add('text-node');
 
-  // Note gets its own sticky-note color regardless of category, and Text is
-  // a borderless label (invisible hit-area rect kept for drag/select).
+  // Note gets its own sticky-note color regardless of category — and,
+  // unlike the plain freeform Text tool, keeps it even though it's also
+  // textOnly (for the auto-growing multi-line textarea editing that comes
+  // with that flag). Plain Text stays a borderless label (invisible
+  // hit-area rect kept for drag/select) since it has no box to color.
   const isNote = n.type === 'note';
-  const fill = n.textOnly ? 'transparent' : n.fillColor || (isNote ? '#fef9c3' : CATEGORY_FILLS[n.category] || '#e2e8f0');
-  const stroke = n.textOnly ? 'none' : n.strokeColor || (isNote ? '#ca8a04' : CATEGORY_COLORS[n.category] || '#64748b');
+  const fill = n.fillColor || (isNote ? '#fef9c3' : n.textOnly ? 'transparent' : CATEGORY_FILLS[n.category] || '#e2e8f0');
+  const stroke = n.strokeColor || (isNote ? '#ca8a04' : n.textOnly ? 'none' : CATEGORY_COLORS[n.category] || '#64748b');
 
   const body = el('rect', {
     class: 'node-body',
@@ -2229,6 +2281,25 @@ function buildMenuEl(items) {
   const menu = document.createElement('div');
   menu.className = 'context-menu';
 
+  // Tracks the one open flyout at *this* menu level (each nested buildMenuEl
+  // call gets its own pair via closure, so levels don't interfere with each
+  // other). Previously each row tracked its own submenuEl and only toggled
+  // a CSS class on its sibling when switching — the sibling's actual panel
+  // never got removed from the DOM, so it stayed visibly open underneath.
+  let openChildRow = null;
+  let openChildEl = null;
+  const closeOpenChild = () => {
+    if (openChildEl) {
+      openChildEl.remove();
+      openMenuEls = openMenuEls.filter((el) => el !== openChildEl);
+      openChildEl = null;
+    }
+    if (openChildRow) {
+      openChildRow.classList.remove('open');
+      openChildRow = null;
+    }
+  };
+
   for (const item of items) {
     if (item === '-') {
       menu.appendChild(document.createElement('div')).className = 'context-menu-sep';
@@ -2246,17 +2317,17 @@ function buildMenuEl(items) {
       chevron.textContent = '›';
       row.appendChild(chevron);
 
-      let submenuEl = null;
       const openSubmenu = () => {
-        // Only one flyout open per parent menu at a time.
-        for (const sib of menu.querySelectorAll('.context-menu-item.open')) sib.classList.remove('open');
-        if (submenuEl) return;
+        if (openChildRow === row) return; // already open for this row
+        closeOpenChild();
         row.classList.add('open');
-        submenuEl = buildMenuEl(item.submenu);
-        document.body.appendChild(submenuEl);
-        openMenuEls.push(submenuEl);
+        const sub = buildMenuEl(item.submenu);
+        document.body.appendChild(sub);
+        openMenuEls.push(sub);
+        openChildRow = row;
+        openChildEl = sub;
         const r = row.getBoundingClientRect();
-        positionFloatingEl(submenuEl, r.right + 2, r.top - 4);
+        positionFloatingEl(sub, r.right + 2, r.top - 4);
       };
       row.addEventListener('mouseenter', openSubmenu);
       row.addEventListener('click', (ev) => {
@@ -2342,7 +2413,9 @@ function buildNodeMenuItems(n, menuX, menuY) {
     items.push('-');
     items.push({ label: 'Text Style', submenu: textStyleItems });
   }
-  if (!n.textOnly) {
+  // Note keeps a real box (see isNote in renderRegularNode) even though
+  // it's also textOnly, so — unlike plain Text — it still gets Box Color.
+  if (!n.textOnly || n.type === 'note') {
     const boxColorItems = [
       { label: 'Fill…', action: () => openBoxFillColorPanel(n, menuX, menuY) },
       { label: 'Border…', action: () => openBoxBorderColorPanel(n, menuX, menuY) },

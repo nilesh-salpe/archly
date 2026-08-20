@@ -25,7 +25,7 @@ const PATTERN_FILES = [
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '25';
+const ASSET_VERSION = '28';
 
 let PATTERNS = [];
 
@@ -69,20 +69,10 @@ function loadPattern(id) {
     const maxX = Math.max(...pattern.nodes.map((s) => s.x + (s.w || getComponent(s.type).w || DEFAULT_NODE_W)));
     const minY = Math.min(...pattern.nodes.map((s) => s.y));
     const titleW = Math.max(320, pattern.title.length * 11);
-    // A freshly loaded pattern always renders unscrolled and at 100% zoom,
-    // so canvas coordinates equal screen pixels at this moment — which lets
-    // us keep the title clear of the floating toolbar (when it's docked
-    // top) using its real, live-measured bottom edge instead of a guessed
-    // constant that silently drifts out of sync whenever the toolbar's own
-    // height changes. minY - 76 is the preferred default gap above the
-    // diagram; only fall back to hugging the toolbar's bottom edge if that
-    // default would actually be covered by it.
-    const toolbarBarEl = document.getElementById('toolbar-bar');
-    const defaultY = minY - 76;
-    const y =
-      typeof toolbarPosition !== 'undefined' && toolbarPosition === 'top' && toolbarBarEl
-        ? Math.max(defaultY, Math.ceil(toolbarBarEl.getBoundingClientRect().bottom) + 14)
-        : defaultY;
+    // Just a fixed breathing-room gap above the diagram now — keeping this
+    // clear of the toolbar is zoomToFit()'s job (called below), since that
+    // applies uniformly any time the view fits, not only right after a
+    // pattern loads.
     nodes.push({
       id: nid++,
       type: def.id,
@@ -92,7 +82,7 @@ function loadPattern(id) {
       container: false,
       textOnly: true,
       x: (minX + maxX) / 2 - titleW / 2,
-      y,
+      y: minY - 90,
       w: titleW,
       h: 40,
     });
@@ -140,10 +130,30 @@ function loadPattern(id) {
     toAnchor: e.toAnchor || undefined,
     elbowOffset: typeof e.elbowOffset === 'number' ? e.elbowOffset : undefined,
     elbowOffsetEnd: typeof e.elbowOffsetEnd === 'number' ? e.elbowOffsetEnd : undefined,
-    waypoints: Array.isArray(e.waypoints) ? e.waypoints : undefined,
+    waypoints: Array.isArray(e.waypoints) ? e.waypoints.map((wp) => ({ ...wp })) : undefined,
   }));
 
+  // Patterns are authored with their topmost row close to canvas y=0 —
+  // zoomToFit() (canvas.js) reserves screen space for the toolbar by
+  // scrolling up from the content, but the canvas can't scroll past 0, so
+  // with no headroom above the title that reservation silently has nowhere
+  // to go and the title ends up under the toolbar anyway. Shifting the
+  // whole diagram down first (purely cosmetic — zoomToFit repositions the
+  // view regardless) guarantees the room exists. 320 comfortably covers the
+  // toolbar's reserved clearance even at the most zoomed-out fit (down to
+  // ZOOM_MIN); shifting doesn't change the diagram's own width/height, so
+  // it can't affect the fit zoom level zoomToFit ends up choosing.
+  const minYAll = Math.min(...nodes.map((n) => n.y));
+  const shift = Math.max(0, 320 - minYAll);
+  if (shift > 0) {
+    for (const n of nodes) n.y += shift;
+    for (const e of edges) {
+      if (e.waypoints) for (const wp of e.waypoints) wp.y += shift;
+    }
+  }
+
   loadDiagram(nodes, edges, nid, edges.length + 1);
+  zoomToFit();
 
   setTimeout(() => playFlow(), 500);
 }
