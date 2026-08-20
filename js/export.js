@@ -47,6 +47,8 @@ const EXPORT_STYLE = `
   .container-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #64748b; }
   .edge-path { fill: none; stroke: #64748b; stroke-width: 2; }
   .arrowhead-path { fill: #64748b; }
+  .edge-path.edge-animated { stroke-dasharray: 6 6; animation: edge-flow 0.6s linear infinite; }
+  @keyframes edge-flow { to { stroke-dashoffset: -12; } }
   .edge-badge circle { fill: #ffffff; stroke: #64748b; stroke-width: 1.5; }
   .edge-badge text { fill: #334155; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
   .edge-protocol rect { fill: #ffffff; stroke: #94a3b8; stroke-width: 1; }
@@ -262,6 +264,7 @@ function diagramToYAMLObject() {
       }
       if (typeof e.strokeWidth === 'number') obj.strokeWidth = e.strokeWidth;
       if (e.color) obj.color = e.color;
+      if (e.animated) obj.animated = true;
       if (e.labelSize && e.labelSize !== 'normal') obj.labelSize = e.labelSize;
       if (e.labelBold) obj.labelBold = true;
       if (e.labelItalic) obj.labelItalic = true;
@@ -346,6 +349,7 @@ function importYAMLFile(file) {
         waypoints: Array.isArray(e.waypoints) ? e.waypoints : undefined,
         strokeWidth: typeof e.strokeWidth === 'number' ? e.strokeWidth : undefined,
         color: typeof e.color === 'string' ? e.color : undefined,
+        animated: !!e.animated,
         labelSize: typeof e.labelSize === 'string' ? e.labelSize : undefined,
         labelBold: !!e.labelBold,
         labelItalic: !!e.labelItalic,

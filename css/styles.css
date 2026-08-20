@@ -457,6 +457,24 @@ html, body {
 
 .arrowhead-path { fill: #64748b; }
 
+/* "Animate Flow" (right-click an edge → Arrowhead → Animate Flow) — a
+   persistent marching-dash effect, toggled via the .edge-animated class
+   (canvas.js's applyEdgeStyle). Pure CSS/no JS, so any number of edges can
+   have this on with zero runtime cost; always flows start→end (see the
+   comment on applyEdgeStyle for why that's also used on bidirectional
+   edges). This dasharray is a CSS rule, so it deliberately overrides any
+   dashed/dotted lineStyle set as an attribute — CSS always wins over a
+   plain attribute — keeping one uniform flow pattern regardless of line
+   style. */
+.edge-path.edge-animated {
+  stroke-dasharray: 6 6;
+  animation: edge-flow 0.6s linear infinite;
+}
+
+@keyframes edge-flow {
+  to { stroke-dashoffset: -12; }
+}
+
 .edge.selected .edge-path {
   stroke: var(--accent) !important;
 }

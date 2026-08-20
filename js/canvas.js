@@ -1182,6 +1182,19 @@ function applyEdgeStyle(path, e) {
   if (dash) path.setAttribute('stroke-dasharray', dash);
   else path.removeAttribute('stroke-dasharray');
 
+  // "Animate Flow" (right-click → Arrowhead → Animate Flow) is a persistent
+  // continuous dash-marching effect — a plain CSS class/keyframe (see
+  // .edge-animated in styles.css), not a JS animation loop, so it costs
+  // nothing to have many of these running and needs no per-frame update.
+  // Its own stroke-dasharray (a CSS rule) intentionally overrides any dashed
+  // /dotted lineStyle attribute above — CSS always wins over a plain
+  // attribute — so an animated edge always shows the uniform flow pattern
+  // regardless of line style. It always flows start→end, even when
+  // arrowStyle is 'both': a true two-way ping-pong effect would need
+  // separate keyframe timing per edge for little added clarity, since the
+  // motion already reads as "this connection is active" either way.
+  path.classList.toggle('edge-animated', !!e.animated);
+
   // Set as inline `style` (not attributes) so a custom color/thickness wins
   // over the .edge-path class default, while still losing to the
   // selected/flow-active/failure state rules — those use !important
@@ -2210,6 +2223,14 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       },
     });
   }
+  items.push({
+    label: (e.animated ? '✓ ' : '   ') + 'Animate Flow',
+    action: () => {
+      e.animated = !e.animated;
+      renderAll();
+      saveState();
+    },
+  });
   items.push('-');
   items.push({ label: 'Thickness', heading: true });
   for (const opt of THICKNESS_OPTIONS) {

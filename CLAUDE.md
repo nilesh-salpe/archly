@@ -317,9 +317,21 @@ exports).
   waypoint beyond an orthogonal edge's default pair, or to remove a curve's
   bend or an existing waypoint. A plain click (no movement) selects the
   edge; right-click for the full menu (line style, routing, arrowhead,
-  thickness/color, protocol label, label style, "Straighten" to clear all
-  bend points, delete). The numbered badge itself is click-to-edit-number
-  only, unrelated to bending.
+  animate flow, thickness/color, protocol label, label style, "Straighten"
+  to clear all bend points, delete). The numbered badge itself is
+  click-to-edit-number only, unrelated to bending.
+  - **Animate Flow**: `edge.animated` (bool, right-click → Arrowhead →
+    Animate Flow) is a persistent marching-dash effect — pure CSS
+    (`.edge-path.edge-animated` + `@keyframes edge-flow` in styles.css,
+    mirrored in export.js's `EXPORT_STYLE` so it keeps animating in an
+    exported standalone SVG opened in a browser), not a JS animation loop,
+    so any number of edges can have it on with zero runtime cost. This is
+    unrelated to the Play button's one-shot per-step dot (above) — both can
+    be on at once. Always flows start→end even when `arrowStyle` is `'both'`
+    (a true two-way effect needs per-edge keyframe timing for little added
+    clarity — the motion already reads as "active" either way). Its
+    stroke-dasharray is a CSS rule, so it deliberately overrides a
+    dashed/dotted `lineStyle` (set as a plain attribute) while animated.
   - **Thickness/color**: `edge.strokeWidth` (px) and `edge.color` (hex) are
     set as inline `style.stroke`/`style.strokeWidth` on the path in
     `applyEdgeStyle` (canvas.js) — inline `style`, not an attribute, so it
