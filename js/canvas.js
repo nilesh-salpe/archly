@@ -48,7 +48,7 @@ function initCanvas() {
     hideContextMenu();
     hidePatternPanel();
     hideHelpPanel();
-    hideTextColorPanel();
+    hideColorPanel();
   });
 
   loadState();
@@ -466,7 +466,16 @@ function renderContainerNode(n) {
   const g = el('g', { class: 'node container-node', 'data-node-id': n.id, transform: `translate(${n.x},${n.y})` });
   if (isNodeSelected(n.id)) g.classList.add('selected');
 
-  const rect = el('rect', { class: 'container-rect', x: 0, y: 0, width: n.w, height: n.h, rx: 10 });
+  const rect = el('rect', {
+    class: 'container-rect',
+    x: 0,
+    y: 0,
+    width: n.w,
+    height: n.h,
+    rx: 10,
+    fill: n.fillColor || 'rgba(148, 163, 184, 0.06)',
+    stroke: n.strokeColor || '#94a3b8',
+  });
   const label = el('text', { class: 'container-label', x: 10, y: 20 }, textNode(n.label));
   const labelHit = el('rect', { class: 'label-hit', x: 4, y: 4, width: Math.min(n.w - 8, 220), height: 22 });
 
@@ -504,6 +513,15 @@ let measureCtx = null;
 
 function fontString(fontSize, fontWeight) {
   return `${fontWeight} ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+}
+
+// Used to size the edge protocol/label chip to its actual text (labelStyle
+// controls make its font size/weight variable, so the old fixed per-char
+// estimate no longer holds).
+function textWidth(str, fontSize, fontWeight) {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = fontString(fontSize, fontWeight);
+  return measureCtx.measureText(str).width;
 }
 
 function wrapText(text, maxWidth, fontSize, fontWeight) {
@@ -555,12 +573,15 @@ function wrapClamped(text, maxWidth, maxLines, fontSize, fontWeight) {
   return clamped;
 }
 
-// Formatting for the freeform "Text" tool only (n.textOnly) — regular
-// component labels stay at their fixed small size deliberately, so a system
-// diagram's node labels don't turn into a font showcase. Applied as an
+// Label text style/color (right-click a node → Text Style). Shared by the
+// freeform "Text" tool (n.textOnly, always styled) and regular component
+// labels (buildRegularLabel — only switches away from the small fixed
+// default once textStyle/textColor is actually set, so a diagram that never
+// touches this renders identically to before it existed). Applied as an
 // inline `style` attribute (not a CSS class) so it wins over the
-// .text-node-label default and — since inline styles travel with a cloned
-// element — needs no EXPORT_STYLE changes to render correctly in exports.
+// .node-label/.text-node-label defaults and — since inline styles travel
+// with a cloned element — needs no EXPORT_STYLE changes to render correctly
+// in exports.
 const TEXT_STYLE_PRESETS = {
   normal: { fontSize: 16, fontWeight: 600, italic: false },
   h1: { fontSize: 28, fontWeight: 700, italic: false },
@@ -579,6 +600,17 @@ const TEXT_COLOR_SWATCHES = [
   '#1e293b', '#64748b', '#dc2626', '#ea580c', '#d97706',
   '#65a30d', '#059669', '#0891b2', '#2563eb', '#7c3aed', '#c026d3', '#db2777',
 ];
+// Pastel palette for node box fill (right-click → Box Color… → Fill…) — kept
+// visually distinct from TEXT_COLOR_SWATCHES above (those are saturated, for
+// readable text; these are light, so a dark label/icon stays legible on top).
+const BOX_FILL_SWATCHES = [
+  '#e2e8f0', '#fee2e2', '#ffedd5', '#fef3c7', '#ecfccb', '#d9f99d',
+  '#d1fae5', '#cffafe', '#dbeafe', '#e0e7ff', '#ede9fe', '#fae8ff',
+];
+// Saturated palette for node box border and edge/arrow color — same family
+// as TEXT_COLOR_SWATCHES so borders/arrows/text share one consistent set of
+// pickable colors across the app.
+const LINE_COLOR_SWATCHES = TEXT_COLOR_SWATCHES;
 
 function textStylePreset(n) {
   return TEXT_STYLE_PRESETS[n.textStyle] || TEXT_STYLE_PRESETS.normal;
@@ -602,8 +634,17 @@ function buildMultilineText(cls, cx, lastLineY, lines, lineHeight) {
 }
 
 function buildRegularLabel(n) {
-  const lines = wrapClamped(n.label, n.w - 16, 2, 12, 500);
-  return buildMultilineText('node-label', n.w / 2, n.h - 12, lines, 13);
+  // Text Style/Color (right-click → Text Style) reuse the freeform Text
+  // tool's textStyle/textColor fields — default font-size/weight (12/500)
+  // and fixed 13px line height are unchanged from before this existed, so a
+  // node that never touches the feature renders identically.
+  const hasTextOverride = !!(n.textStyle || n.textColor);
+  const preset = hasTextOverride ? textStylePreset(n) : { fontSize: 12, fontWeight: 500 };
+  const lineHeight = hasTextOverride ? Math.round(preset.fontSize * 1.2) : 13;
+  const lines = wrapClamped(n.label, n.w - 16, 2, preset.fontSize, preset.fontWeight);
+  const textEl = buildMultilineText('node-label', n.w / 2, n.h - 12, lines, lineHeight);
+  if (hasTextOverride) textEl.setAttribute('style', textInlineStyle(n));
+  return textEl;
 }
 
 function buildTextOnlyLabel(n) {
@@ -635,8 +676,8 @@ function renderRegularNode(n) {
   // Note gets its own sticky-note color regardless of category, and Text is
   // a borderless label (invisible hit-area rect kept for drag/select).
   const isNote = n.type === 'note';
-  const fill = n.textOnly ? 'transparent' : isNote ? '#fef9c3' : CATEGORY_FILLS[n.category] || '#e2e8f0';
-  const stroke = n.textOnly ? 'none' : isNote ? '#ca8a04' : CATEGORY_COLORS[n.category] || '#64748b';
+  const fill = n.textOnly ? 'transparent' : n.fillColor || (isNote ? '#fef9c3' : CATEGORY_FILLS[n.category] || '#e2e8f0');
+  const stroke = n.textOnly ? 'none' : n.strokeColor || (isNote ? '#ca8a04' : CATEGORY_COLORS[n.category] || '#64748b');
 
   const body = el('rect', {
     class: 'node-body',
@@ -817,7 +858,8 @@ function openRpsEditor(node, clientX, clientY) {
   openNodeSimEditor(node, 'rps', clientX, clientY, typeof node.rps === 'number' ? node.rps : 0);
 }
 
-// ---------- Text formatting (freeform "Text" tool only) ----------
+// ---------- Text formatting (node labels: the "Text" tool + regular
+// component/container labels) ----------
 
 function setTextStyle(node, style) {
   node.textStyle = style === 'normal' ? undefined : style;
@@ -832,61 +874,168 @@ function setTextColor(node, color) {
   saveState();
 }
 
-let textColorPanelEl = null;
+// ---------- Color picker panel ----------
+// One small floating swatch-grid + custom-color-input panel, shared by every
+// "…Color…" menu action in the app (label text color, node box fill/border,
+// edge/arrow color, edge label color) rather than duplicating the same DOM
+// four times. `onPick(color)` fires on every swatch click and on every
+// native color-input `input` event (live preview); `onPick(null)` fires from
+// Reset — callers treat null as "clear the override, fall back to default".
 
-function hideTextColorPanel() {
-  if (textColorPanelEl) {
-    textColorPanelEl.remove();
-    textColorPanelEl = null;
+let colorPanelEl = null;
+
+function hideColorPanel() {
+  if (colorPanelEl) {
+    colorPanelEl.remove();
+    colorPanelEl = null;
   }
 }
 
-function openTextColorPanel(node, clientX, clientY) {
-  hideTextColorPanel();
+function openColorPanel({ x, y, swatches, current, defaultColor, onPick }) {
+  hideColorPanel();
   const panel = document.createElement('div');
-  panel.className = 'text-color-panel';
+  panel.className = 'color-picker-panel';
 
-  for (const color of TEXT_COLOR_SWATCHES) {
+  for (const color of swatches) {
     const swatch = document.createElement('button');
-    swatch.className = 'text-color-swatch';
+    swatch.className = 'color-picker-swatch';
     swatch.style.background = color;
     swatch.title = color;
-    if (node.textColor === color) swatch.classList.add('active');
+    if (current === color) swatch.classList.add('active');
     swatch.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      setTextColor(node, color);
-      hideTextColorPanel();
+      onPick(color);
+      hideColorPanel();
     });
     panel.appendChild(swatch);
   }
 
   const customLabel = document.createElement('label');
-  customLabel.className = 'text-color-custom';
+  customLabel.className = 'color-picker-custom';
   customLabel.textContent = 'Custom…';
   const customInput = document.createElement('input');
   customInput.type = 'color';
-  customInput.value = node.textColor || '#1e293b';
-  customInput.addEventListener('input', () => setTextColor(node, customInput.value));
+  customInput.value = current || defaultColor || '#1e293b';
+  customInput.addEventListener('input', () => onPick(customInput.value));
   customInput.addEventListener('click', (ev) => ev.stopPropagation());
   customLabel.appendChild(customInput);
   panel.appendChild(customLabel);
 
-  if (node.textColor) {
+  if (current) {
     const resetBtn = document.createElement('button');
-    resetBtn.className = 'text-color-reset';
+    resetBtn.className = 'color-picker-reset';
     resetBtn.textContent = 'Reset to default';
     resetBtn.addEventListener('click', (ev) => {
       ev.stopPropagation();
-      setTextColor(node, null);
-      hideTextColorPanel();
+      onPick(null);
+      hideColorPanel();
     });
     panel.appendChild(resetBtn);
   }
 
-  panel.style.left = `${clientX}px`;
-  panel.style.top = `${clientY}px`;
+  panel.style.left = `${x}px`;
+  panel.style.top = `${y}px`;
   document.body.appendChild(panel);
-  textColorPanelEl = panel;
+  colorPanelEl = panel;
+}
+
+function openTextColorPanel(node, x, y) {
+  openColorPanel({
+    x, y,
+    swatches: TEXT_COLOR_SWATCHES,
+    current: node.textColor,
+    defaultColor: '#1e293b',
+    onPick: (color) => setTextColor(node, color),
+  });
+}
+
+// ---------- Node box color (fill + border) ----------
+
+function setNodeFillColor(node, color) {
+  node.fillColor = color || undefined;
+  renderAll();
+  saveState();
+}
+
+function setNodeStrokeColor(node, color) {
+  node.strokeColor = color || undefined;
+  renderAll();
+  saveState();
+}
+
+function resetNodeColors(node) {
+  node.fillColor = undefined;
+  node.strokeColor = undefined;
+  renderAll();
+  saveState();
+}
+
+// Only feeds the color-input picker's starting swatch (an <input type=color>
+// needs a #rrggbb value, not the translucent rgba() containers actually
+// render with by default) — the real render fallback stays in
+// renderContainerNode/renderRegularNode, independent of this.
+function defaultNodeFill(node) {
+  if (node.type === 'note') return '#fef9c3';
+  return node.container ? '#e2e8f0' : CATEGORY_FILLS[node.category] || '#e2e8f0';
+}
+
+function defaultNodeStroke(node) {
+  if (node.type === 'note') return '#ca8a04';
+  return node.container ? '#94a3b8' : CATEGORY_COLORS[node.category] || '#64748b';
+}
+
+function openBoxFillColorPanel(node, x, y) {
+  openColorPanel({
+    x, y,
+    swatches: BOX_FILL_SWATCHES,
+    current: node.fillColor,
+    defaultColor: defaultNodeFill(node),
+    onPick: (color) => setNodeFillColor(node, color),
+  });
+}
+
+function openBoxBorderColorPanel(node, x, y) {
+  openColorPanel({
+    x, y,
+    swatches: LINE_COLOR_SWATCHES,
+    current: node.strokeColor,
+    defaultColor: defaultNodeStroke(node),
+    onPick: (color) => setNodeStrokeColor(node, color),
+  });
+}
+
+// ---------- Edge/arrow color, edge label color ----------
+
+function setEdgeColor(edge, color) {
+  edge.color = color || undefined;
+  renderAll();
+  saveState();
+}
+
+function openEdgeColorPanel(edge, x, y) {
+  openColorPanel({
+    x, y,
+    swatches: LINE_COLOR_SWATCHES,
+    current: edge.color,
+    defaultColor: '#64748b',
+    onPick: (color) => setEdgeColor(edge, color),
+  });
+}
+
+function setEdgeLabelColor(edge, color) {
+  edge.labelColor = color || undefined;
+  renderAll();
+  saveState();
+}
+
+function openEdgeLabelColorPanel(edge, x, y) {
+  openColorPanel({
+    x, y,
+    swatches: TEXT_COLOR_SWATCHES,
+    current: edge.labelColor,
+    defaultColor: '#475569',
+    onPick: (color) => setEdgeLabelColor(edge, color),
+  });
 }
 
 // A node's whole border (not just fixed handle points) is a connector — drag
@@ -984,35 +1133,70 @@ function renderEdge(e) {
 
   if (e.protocol) {
     const lp = geo.labelPos;
-    const w = Math.max(30, e.protocol.length * 6.5 + 12);
+    const size = EDGE_LABEL_SIZES[e.labelSize] || EDGE_LABEL_SIZES.normal;
+    const weight = e.labelBold ? 700 : 600;
+    const h = Math.round(size * 1.8);
+    const w = Math.max(30, textWidth(e.protocol, size, weight) + 16);
     const chip = el('g', { class: 'edge-protocol', transform: `translate(${lp.x},${lp.y})` });
-    chip.appendChild(el('rect', { x: -w / 2, y: -9, width: w, height: 18, rx: 4 }));
-    chip.appendChild(el('text', { x: 0, y: 1 }, textNode(e.protocol)));
-    chip.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openProtocolEditor(e, ev.clientX, ev.clientY);
-    });
+    chip.appendChild(el('rect', { x: -w / 2, y: -h / 2, width: w, height: h, rx: 4 }));
+    const labelText = el('text', { x: 0, y: 1 }, textNode(e.protocol));
+    let labelStyle = `font-size:${size}px;font-weight:${weight};`;
+    if (e.labelItalic) labelStyle += 'font-style:italic;';
+    if (e.labelColor) labelStyle += `fill:${e.labelColor};`;
+    labelText.setAttribute('style', labelStyle);
+    chip.appendChild(labelText);
+    chip.addEventListener('pointerdown', (ev) => startLabelDrag(ev, e));
     g.appendChild(chip);
   }
 
   return g;
 }
 
+// The default arrowhead marker (index.html) is shared by every edge and
+// colored via the .arrowhead-path CSS class. A per-edge color override
+// (edge.color) needs its own marker instance — SVG has no way to recolor a
+// referenced marker per-user via CSS alone — so one gets lazily created and
+// cached per distinct color the first time it's needed, and reused after
+// that by every edge sharing that color.
+let edgeDefs = null;
+const arrowheadMarkerCache = new Set();
+
+function ensureArrowheadMarker(color) {
+  const id = `arrowhead-${color.replace('#', '')}`;
+  if (!arrowheadMarkerCache.has(id)) {
+    if (!edgeDefs) edgeDefs = svg.querySelector('defs');
+    const marker = el('marker', { id, markerWidth: 10, markerHeight: 10, refX: 8, refY: 5, orient: 'auto-start-reverse' });
+    marker.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 z', fill: color }));
+    edgeDefs.appendChild(marker);
+    arrowheadMarkerCache.add(id);
+  }
+  return id;
+}
+
 // A single marker (orient="auto-start-reverse") auto-flips correctly for both
 // marker-start and marker-end, so one <marker> def in index.html covers every
-// arrowhead combination below.
+// arrowhead combination below (plus a colored one per ensureArrowheadMarker
+// above, when the edge overrides its color).
 function applyEdgeStyle(path, e) {
   const dash = { dashed: '9 6', dotted: '2 4' }[e.lineStyle];
   if (dash) path.setAttribute('stroke-dasharray', dash);
   else path.removeAttribute('stroke-dasharray');
 
+  // Set as inline `style` (not attributes) so a custom color/thickness wins
+  // over the .edge-path class default, while still losing to the
+  // selected/flow-active/failure state rules — those use !important
+  // specifically so highlighting a custom-colored edge still reads clearly.
+  path.style.stroke = e.color || '';
+  path.style.strokeWidth = e.strokeWidth ? String(e.strokeWidth) : '';
+
   const arrowStyle = e.arrowStyle || 'end';
   path.removeAttribute('marker-start');
   path.removeAttribute('marker-end');
-  if (arrowStyle === 'end') path.setAttribute('marker-end', 'url(#arrowhead)');
+  const markerId = e.color ? ensureArrowheadMarker(e.color) : 'arrowhead';
+  if (arrowStyle === 'end') path.setAttribute('marker-end', `url(#${markerId})`);
   else if (arrowStyle === 'both') {
-    path.setAttribute('marker-start', 'url(#arrowhead)');
-    path.setAttribute('marker-end', 'url(#arrowhead)');
+    path.setAttribute('marker-start', `url(#${markerId})`);
+    path.setAttribute('marker-end', `url(#${markerId})`);
   }
 }
 
@@ -1477,6 +1661,47 @@ function onCurveDragUp() {
   curveDragCtx = null;
 }
 
+// ---- Protocol/label chip: drag to reposition (edge.labelOffset), plain
+// click (no movement) opens the label text editor instead ----
+
+let labelDragCtx = null;
+
+function startLabelDrag(ev, edge) {
+  ev.stopPropagation();
+  labelDragCtx = {
+    edge,
+    startOffset: edge.labelOffset ? { ...edge.labelOffset } : { dx: 0, dy: 0 },
+    startSvg: toSVGCoords(ev.clientX, ev.clientY),
+    startClient: { x: ev.clientX, y: ev.clientY },
+    moved: false,
+  };
+  window.addEventListener('pointermove', onLabelDragMove);
+  window.addEventListener('pointerup', onLabelDragUp);
+}
+
+function onLabelDragMove(ev) {
+  if (!labelDragCtx) return;
+  const dx = ev.clientX - labelDragCtx.startClient.x;
+  const dy = ev.clientY - labelDragCtx.startClient.y;
+  if (!labelDragCtx.moved && Math.hypot(dx, dy) > 4) labelDragCtx.moved = true;
+  if (!labelDragCtx.moved) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  labelDragCtx.edge.labelOffset = {
+    dx: labelDragCtx.startOffset.dx + (p.x - labelDragCtx.startSvg.x),
+    dy: labelDragCtx.startOffset.dy + (p.y - labelDragCtx.startSvg.y),
+  };
+  renderAll();
+}
+
+function onLabelDragUp(ev) {
+  window.removeEventListener('pointermove', onLabelDragMove);
+  window.removeEventListener('pointerup', onLabelDragUp);
+  if (!labelDragCtx) return;
+  if (labelDragCtx.moved) saveState();
+  else openProtocolEditor(labelDragCtx.edge, ev.clientX, ev.clientY);
+  labelDragCtx = null;
+}
+
 // ---- Orthogonal default: two independent corners ----
 // Grabbing near the start-side corner moves only edge.elbowOffset; grabbing
 // near the end-side corner moves only edge.elbowOffsetEnd. Which one a
@@ -1795,7 +2020,7 @@ function buildNodeMenuItems(n, menuX, menuY) {
     { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
     { label: 'Copy    ⌘C', action: () => copySelectedNode() },
   ];
-  if (n.textOnly) {
+  if (!n.container) {
     items.push('-');
     items.push({ label: 'Text Style', heading: true });
     for (const style of Object.keys(TEXT_STYLE_LABELS)) {
@@ -1809,6 +2034,15 @@ function buildNodeMenuItems(n, menuX, menuY) {
       label: '   Text Color…',
       action: () => openTextColorPanel(n, menuX, menuY),
     });
+  }
+  if (!n.textOnly) {
+    items.push('-');
+    items.push({ label: 'Box Color', heading: true });
+    items.push({ label: '   Fill…', action: () => openBoxFillColorPanel(n, menuX, menuY) });
+    items.push({ label: '   Border…', action: () => openBoxBorderColorPanel(n, menuX, menuY) });
+    if (n.fillColor || n.strokeColor) {
+      items.push({ label: '   Reset Colors', action: () => resetNodeColors(n) });
+    }
   }
   if (!n.container && !n.textOnly) {
     items.push('-');
@@ -1899,6 +2133,22 @@ const ARROW_STYLE_OPTIONS = [
   { key: 'none', label: 'No Arrowhead' },
 ];
 const PROTOCOL_PRESETS = ['REST', 'gRPC', 'GraphQL', 'Async'];
+const THICKNESS_OPTIONS = [
+  { key: 1.5, label: 'Thin' },
+  { key: 2, label: 'Normal' },
+  { key: 3, label: 'Thick' },
+  { key: 4, label: 'Extra Thick' },
+];
+// Font sizes for the edge protocol/label chip (right-click → Label Style) —
+// 'normal' (11) is close to, but not identical to, the pre-existing fixed
+// 10px .edge-protocol CSS default, since these are also used to size the
+// chip's rect via textWidth() and 11 measures a touch more comfortably.
+const EDGE_LABEL_SIZES = { small: 9, normal: 11, large: 14 };
+const LABEL_SIZE_OPTIONS = [
+  { key: 'small', label: 'Small' },
+  { key: 'normal', label: 'Normal' },
+  { key: 'large', label: 'Large' },
+];
 
 function buildEdgeMenuItems(e, menuX, menuY) {
   const items = [{ label: 'Line Style', heading: true }];
@@ -1961,6 +2211,30 @@ function buildEdgeMenuItems(e, menuX, menuY) {
     });
   }
   items.push('-');
+  items.push({ label: 'Thickness', heading: true });
+  for (const opt of THICKNESS_OPTIONS) {
+    const active = (e.strokeWidth || 2) === opt.key;
+    items.push({
+      label: (active ? '✓ ' : '   ') + opt.label,
+      action: () => {
+        e.strokeWidth = opt.key === 2 ? undefined : opt.key;
+        renderAll();
+        saveState();
+      },
+    });
+  }
+  items.push({ label: '   Color…', action: () => openEdgeColorPanel(e, menuX, menuY) });
+  if (e.color) {
+    items.push({
+      label: '   Reset Color',
+      action: () => {
+        e.color = undefined;
+        renderAll();
+        saveState();
+      },
+    });
+  }
+  items.push('-');
   items.push({ label: 'Protocol Label', heading: true });
   for (const p of PROTOCOL_PRESETS) {
     const active = e.protocol === p;
@@ -1979,6 +2253,46 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       label: '   Clear Label',
       action: () => {
         e.protocol = null;
+        renderAll();
+        saveState();
+      },
+    });
+  }
+  items.push('-');
+  items.push({ label: 'Label Style (drag the label to reposition)', heading: true });
+  for (const opt of LABEL_SIZE_OPTIONS) {
+    const active = (e.labelSize || 'normal') === opt.key;
+    items.push({
+      label: (active ? '✓ ' : '   ') + opt.label,
+      action: () => {
+        e.labelSize = opt.key === 'normal' ? undefined : opt.key;
+        renderAll();
+        saveState();
+      },
+    });
+  }
+  items.push({
+    label: (e.labelBold ? '✓ ' : '   ') + 'Bold',
+    action: () => {
+      e.labelBold = !e.labelBold;
+      renderAll();
+      saveState();
+    },
+  });
+  items.push({
+    label: (e.labelItalic ? '✓ ' : '   ') + 'Italic',
+    action: () => {
+      e.labelItalic = !e.labelItalic;
+      renderAll();
+      saveState();
+    },
+  });
+  items.push({ label: '   Color…', action: () => openEdgeLabelColorPanel(e, menuX, menuY) });
+  if (e.labelOffset) {
+    items.push({
+      label: '   Reset Label Position',
+      action: () => {
+        e.labelOffset = undefined;
         renderAll();
         saveState();
       },
@@ -2045,7 +2359,7 @@ function onKeyDown(ev) {
     hideContextMenu();
     hidePatternPanel();
     hideHelpPanel();
-    hideTextColorPanel();
+    hideColorPanel();
   }
 
   const active = document.activeElement;

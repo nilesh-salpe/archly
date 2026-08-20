@@ -79,17 +79,39 @@ exports).
     keeps working unchanged for every pointer-math function. `export.js`
     strips that inline style before export so exports are always full-res
     regardless of on-screen zoom.
-  - **Text formatting** (`textOnly` nodes only): `TEXT_STYLE_PRESETS`
-    (`normal`/`h1`/`h2`/`h3`/`italic`, each a `{fontSize, fontWeight,
-    italic}`) plus an optional `node.textColor` hex string. Right-click →
-    style radio options and "Text Color…" (`openTextColorPanel`, a swatch
-    grid + native `<input type=color>`, same floating-panel pattern as the
-    pattern/help panels) set `node.textStyle`/`node.textColor` via
+  - **Text formatting** (the `textOnly` "Text" tool *and* regular
+    component/container labels — not containers' own `container-label`):
+    `TEXT_STYLE_PRESETS` (`normal`/`h1`/`h2`/`h3`/`italic`, each a
+    `{fontSize, fontWeight, italic}`) plus an optional `node.textColor` hex
+    string. Right-click → style radio options and "Text Color…"
+    (`openTextColorPanel`) set `node.textStyle`/`node.textColor` via
     `setTextStyle`/`setTextColor`. `textInlineStyle(n)` renders these as an
     inline SVG `style` attribute (wins over the CSS class defaults, and
     survives `svg.cloneNode(true)` on export with no `EXPORT_STYLE` changes
-    needed) — consumed by `buildTextOnlyLabel`/`recomputeTextOnlyHeight`.
-    Both fields round-trip through YAML export/import and pattern files.
+    needed) — consumed by `buildTextOnlyLabel`/`recomputeTextOnlyHeight` and
+    by `buildRegularLabel` (which only switches away from its small fixed
+    12px/500-weight default once `textStyle`/`textColor` is actually set, so
+    a node that never touches this renders exactly as before the feature
+    existed). Both fields round-trip through YAML export/import and pattern
+    files.
+  - **Box color**: `node.fillColor`/`node.strokeColor` (optional hex
+    overrides, any node type except `textOnly`) win over the category-based
+    defaults in `renderRegularNode`/`renderContainerNode` — set via
+    right-click → Box Color → Fill…/Border… (`openBoxFillColorPanel`/
+    `openBoxBorderColorPanel`/`setNodeFillColor`/`setNodeStrokeColor`).
+    Plain SVG *attributes*, not inline `style`, deliberately — so the
+    `.node.selected`/`.node.flow-active`/`.node.sim-failed` CSS class rules
+    (which target `stroke`) still win over a custom color, same as the
+    pre-existing category-color attributes did. `renderContainerNode` moved
+    its fill/stroke off the `.container-rect` CSS class and onto the same
+    per-node attribute pattern to make this possible (the class now only
+    owns stroke-width/dasharray/rx).
+  - **Color picker panel**: `openColorPanel({x, y, swatches, current,
+    defaultColor, onPick})` is the one floating swatch-grid + custom-color
+    picker shared by every "…Color…" menu action in the app (label text
+    color, box fill/border, edge/arrow color, edge label color) — see
+    `.color-picker-panel` in styles.css. `onPick(null)` means "clear the
+    override."
 - **`js/arrows.js`** — pure geometry, no DOM/state mutation. `computeEdgeGeometry(edge, allEdges, allNodes)`
   is the single entry point; it returns `{start, end, d, badge, labelPos, points, refs}`.
   - **Endpoints**: `computeStraightEndpoints`/`computeOrthogonalPoints` use
@@ -295,8 +317,34 @@ exports).
   waypoint beyond an orthogonal edge's default pair, or to remove a curve's
   bend or an existing waypoint. A plain click (no movement) selects the
   edge; right-click for the full menu (line style, routing, arrowhead,
-  protocol label, "Straighten" to clear all bend points, delete). The
-  numbered badge itself is click-to-edit-number only, unrelated to bending.
+  thickness/color, protocol label, label style, "Straighten" to clear all
+  bend points, delete). The numbered badge itself is click-to-edit-number
+  only, unrelated to bending.
+  - **Thickness/color**: `edge.strokeWidth` (px) and `edge.color` (hex) are
+    set as inline `style.stroke`/`style.strokeWidth` on the path in
+    `applyEdgeStyle` (canvas.js) — inline `style`, not an attribute, so it
+    beats the `.edge-path` class default while still losing to the
+    `.edge.selected`/`.edge.flow-active`/`.edge.sim-failed-edge`/
+    `.edge.sim-unreachable` state rules, which use `!important` in
+    styles.css specifically so highlighting still reads clearly over a
+    custom color. A colored arrowhead needs its own `<marker>` (SVG can't
+    recolor a shared referenced marker per-edge via CSS) — `ensureArrowheadMarker(color)`
+    lazily creates and caches one per distinct color in `<defs>`, reused by
+    every edge sharing that color; uncolored edges keep using the single
+    shared `#arrowhead` from index.html.
+  - **Label style + position**: the protocol/label chip's font size
+    (`edge.labelSize`: `small`/`normal`/`large`, via `EDGE_LABEL_SIZES`),
+    weight/italic (`edge.labelBold`/`edge.labelItalic`), and text color
+    (`edge.labelColor`) are set via right-click → Label Style and rendered
+    as an inline `style` on the chip's `<text>`; `textWidth()` (canvas.js,
+    reusing the same canvas-2D measurement `wrapText` uses) sizes the chip
+    rect to the actual rendered text since the font size is no longer fixed.
+    Dragging the chip itself (`startLabelDrag`/`onLabelDragMove`/
+    `onLabelDragUp`) repositions it by setting `edge.labelOffset {dx, dy}`,
+    a signed offset applied on top of whichever default position
+    `computeEdgeGeometry` would've picked (`applyLabelOffset` in arrows.js)
+    — a plain click with no movement still opens the label text editor
+    instead. All five fields round-trip through YAML export/import.
 - Selection actions (rename/duplicate/copy/layer/delete for nodes; line
   style/routing/arrowhead/protocol/delete for edges) live in exactly one
   place — `buildNodeMenuItems`/`buildEdgeMenuItems`/`buildMultiSelectMenuItems`

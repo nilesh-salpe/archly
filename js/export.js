@@ -43,7 +43,7 @@ const EXPORT_STYLE = `
   .node-icon { stroke: #1e293b; stroke-width: 1.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
   .node-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 12px; fill: #1e293b; text-anchor: middle; font-weight: 500; }
   .text-node-label { font-size: 16px; font-weight: 600; }
-  .container-rect { fill: rgba(148, 163, 184, 0.08); stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 6 4; }
+  .container-rect { stroke-width: 1.5; stroke-dasharray: 6 4; }
   .container-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #64748b; }
   .edge-path { fill: none; stroke: #64748b; stroke-width: 2; }
   .arrowhead-path { fill: #64748b; }
@@ -242,6 +242,8 @@ function diagramToYAMLObject() {
       if (typeof n.rps === 'number') obj.rps = n.rps;
       if (n.textStyle) obj.textStyle = n.textStyle;
       if (n.textColor) obj.textColor = n.textColor;
+      if (n.fillColor) obj.fillColor = n.fillColor;
+      if (n.strokeColor) obj.strokeColor = n.strokeColor;
       return obj;
     }),
     edges: state.edges.map((e) => {
@@ -258,6 +260,13 @@ function diagramToYAMLObject() {
       if (Array.isArray(e.waypoints) && e.waypoints.length) {
         obj.waypoints = e.waypoints.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
       }
+      if (typeof e.strokeWidth === 'number') obj.strokeWidth = e.strokeWidth;
+      if (e.color) obj.color = e.color;
+      if (e.labelSize && e.labelSize !== 'normal') obj.labelSize = e.labelSize;
+      if (e.labelBold) obj.labelBold = true;
+      if (e.labelItalic) obj.labelItalic = true;
+      if (e.labelColor) obj.labelColor = e.labelColor;
+      if (e.labelOffset) obj.labelOffset = { dx: Math.round(e.labelOffset.dx), dy: Math.round(e.labelOffset.dy) };
       return obj;
     }),
   };
@@ -310,6 +319,8 @@ function importYAMLFile(file) {
         rps: typeof spec.rps === 'number' ? spec.rps : undefined,
         textStyle: typeof spec.textStyle === 'string' ? spec.textStyle : undefined,
         textColor: typeof spec.textColor === 'string' ? spec.textColor : undefined,
+        fillColor: typeof spec.fillColor === 'string' ? spec.fillColor : undefined,
+        strokeColor: typeof spec.strokeColor === 'string' ? spec.strokeColor : undefined,
       };
       idMap[spec.id] = nid;
       nodes.push(node);
@@ -333,6 +344,15 @@ function importYAMLFile(file) {
         elbowOffset: typeof e.elbowOffset === 'number' ? e.elbowOffset : undefined,
         elbowOffsetEnd: typeof e.elbowOffsetEnd === 'number' ? e.elbowOffsetEnd : undefined,
         waypoints: Array.isArray(e.waypoints) ? e.waypoints : undefined,
+        strokeWidth: typeof e.strokeWidth === 'number' ? e.strokeWidth : undefined,
+        color: typeof e.color === 'string' ? e.color : undefined,
+        labelSize: typeof e.labelSize === 'string' ? e.labelSize : undefined,
+        labelBold: !!e.labelBold,
+        labelItalic: !!e.labelItalic,
+        labelColor: typeof e.labelColor === 'string' ? e.labelColor : undefined,
+        labelOffset: e.labelOffset && typeof e.labelOffset.dx === 'number' && typeof e.labelOffset.dy === 'number'
+          ? { dx: e.labelOffset.dx, dy: e.labelOffset.dy }
+          : undefined,
       }));
 
     if (state.nodes.length && !confirm('Replace the current diagram with the imported one? This cannot be undone.')) return;

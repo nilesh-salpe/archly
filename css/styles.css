@@ -383,8 +383,9 @@ html, body {
 /* ---------- Diagram elements ---------- */
 
 .container-node .container-rect {
-  fill: rgba(148, 163, 184, 0.06);
-  stroke: #94a3b8;
+  /* fill/stroke are set per-node as element attributes (canvas.js), so a
+     per-container color override (right-click → Box Color…) can win —
+     this class only owns the structural properties. */
   stroke-width: 1.5;
   stroke-dasharray: 6 4;
   rx: 10;
@@ -443,9 +444,12 @@ html, body {
 }
 
 .edge-path {
-  /* marker-start / marker-end / stroke-dasharray are set inline per edge in
-     canvas.js (applyEdgeStyle), since they vary per edge (arrowhead + line
-     style) rather than being a fixed rule for all edges. */
+  /* marker-start / marker-end / stroke-dasharray / stroke / stroke-width are
+     set inline per edge in canvas.js (applyEdgeStyle) — stroke/stroke-width
+     as inline `style` (so a custom edge.color/strokeWidth override wins over
+     this class default), the rest as attributes. The state rules below use
+     !important so selection/flow/failure highlighting still wins over a
+     custom per-edge color. */
   fill: none;
   stroke: #64748b;
   stroke-width: 2;
@@ -454,7 +458,7 @@ html, body {
 .arrowhead-path { fill: #64748b; }
 
 .edge.selected .edge-path {
-  stroke: var(--accent);
+  stroke: var(--accent) !important;
 }
 
 .edge-hit {
@@ -496,13 +500,22 @@ html, body {
 }
 
 .edge-protocol text {
+  /* font-size/weight/style/fill are set per-edge inline (canvas.js's
+     renderEdge, via right-click → Label Style) — these are just fallbacks. */
   fill: #475569;
   font-size: 10px;
   font-weight: 600;
   text-anchor: middle;
   dominant-baseline: central;
-  cursor: text;
+  pointer-events: none;
 }
+
+.edge-protocol {
+  /* Drag to reposition (edge.labelOffset); a plain click (no movement)
+     still opens the label text editor — see startLabelDrag in canvas.js. */
+  cursor: grab;
+}
+.edge-protocol:active { cursor: grabbing; }
 
 .temp-line {
   stroke: var(--accent);
@@ -528,8 +541,8 @@ html, body {
 }
 
 .edge.flow-active .edge-path {
-  stroke: #f59e0b;
-  stroke-width: 3;
+  stroke: #f59e0b !important;
+  stroke-width: 3 !important;
 }
 
 .edge.flow-active .edge-badge circle {
@@ -571,8 +584,8 @@ html, body {
 }
 
 .edge.sim-failed-edge .edge-path {
-  stroke: #dc2626;
-  stroke-width: 3;
+  stroke: #dc2626 !important;
+  stroke-width: 3 !important;
   stroke-dasharray: 5 4;
 }
 
@@ -587,7 +600,7 @@ html, body {
 }
 
 .edge.sim-unreachable .edge-path {
-  stroke: #dc2626;
+  stroke: #dc2626 !important;
   opacity: 0.5;
   stroke-dasharray: 3 3;
 }
@@ -886,9 +899,11 @@ html, body {
   color: var(--text);
 }
 
-/* ---------- Text color picker (right-click a Text node → Text Color…) ---------- */
+/* ---------- Color picker panel ----------
+   Shared by every "…Color…" menu action (text color, box fill/border,
+   edge/arrow color, edge label color) — see openColorPanel in canvas.js. */
 
-.text-color-panel {
+.color-picker-panel {
   position: fixed;
   display: grid;
   grid-template-columns: repeat(6, 22px);
@@ -902,7 +917,7 @@ html, body {
   z-index: 60;
 }
 
-.text-color-swatch {
+.color-picker-swatch {
   width: 22px;
   height: 22px;
   padding: 0;
@@ -912,10 +927,10 @@ html, body {
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
-.text-color-swatch:hover { transform: scale(1.12); }
-.text-color-swatch.active { border-color: var(--accent); }
+.color-picker-swatch:hover { transform: scale(1.12); }
+.color-picker-swatch.active { border-color: var(--accent); }
 
-.text-color-custom {
+.color-picker-custom {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -926,7 +941,7 @@ html, body {
   cursor: pointer;
 }
 
-.text-color-custom input[type='color'] {
+.color-picker-custom input[type='color'] {
   width: 26px;
   height: 22px;
   padding: 0;
@@ -936,7 +951,7 @@ html, body {
   cursor: pointer;
 }
 
-.text-color-reset {
+.color-picker-reset {
   grid-column: 1 / -1;
   margin-top: 4px;
   padding: 5px 0;
@@ -949,7 +964,7 @@ html, body {
   cursor: pointer;
 }
 
-.text-color-reset:hover { color: var(--text); }
+.color-picker-reset:hover { color: var(--text); }
 
 /* ---------- Rulers ---------- */
 

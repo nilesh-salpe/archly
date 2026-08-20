@@ -230,6 +230,18 @@ function pointAtPolylineFraction(points, frac) {
   return points[points.length - 1];
 }
 
+// Right-click an edge's protocol/label chip → drag it — canvas.js's
+// startLabelDrag stores the drag as a plain signed offset from whatever the
+// label's default (unoffset) position would be, so it stays put relative to
+// the line as the line itself moves/re-routes.
+function applyLabelOffset(labelPos, edge) {
+  if (edge.labelOffset) {
+    labelPos.x += edge.labelOffset.dx;
+    labelPos.y += edge.labelOffset.dy;
+  }
+  return labelPos;
+}
+
 function computeEdgeGeometry(edge, allEdges, allNodes) {
   if (edge.routing === 'orthogonal') {
     const points = computeOrthogonalPoints(edge, allNodes);
@@ -245,7 +257,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     const badge = !waypointed && points.length === 4
       ? { x: (points[1].x + points[2].x) / 2, y: (points[1].y + points[2].y) / 2 }
       : pointAtPolylineFraction(points, 0.5);
-    const labelPos = { x: badge.x, y: badge.y - 20 };
+    const labelPos = applyLabelOffset({ x: badge.x, y: badge.y - 20 }, edge);
     // `refs` is the real editable point list — [start, ...waypoints, end] —
     // with the jog algorithm's synthetic corners stripped out, since those
     // aren't 1:1 with edge.waypoints. Only meaningful (and only used by
@@ -285,7 +297,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     badge = { x: cx, y: cy };
   }
 
-  const labelPos = { x: badge.x + nx * 20, y: badge.y + ny * 20 };
+  const labelPos = applyLabelOffset({ x: badge.x + nx * 20, y: badge.y + ny * 20 }, edge);
   const points = bend === 0 ? [start, end] : [start, { x: badge.x, y: badge.y }, end];
   return { start, end, d, badge, labelPos, points, refs: points };
 }
