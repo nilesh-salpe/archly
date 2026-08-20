@@ -253,6 +253,8 @@ function buildHelpPanel() {
   return panel;
 }
 
+// Positioned off #btn-more (the kebab) since Help now lives inside that
+// menu rather than being its own toolbar button.
 function toggleHelpPanel(ev) {
   if (ev) ev.stopPropagation();
   if (helpPanelEl) {
@@ -261,7 +263,7 @@ function toggleHelpPanel(ev) {
   }
   hideContextMenu();
   hidePatternPanel();
-  const btn = document.getElementById('btn-help');
+  const btn = document.getElementById('btn-more');
   const rect = btn.getBoundingClientRect();
   const panel = buildHelpPanel();
   panel.style.right = `${window.innerWidth - rect.right}px`;
@@ -270,26 +272,25 @@ function toggleHelpPanel(ev) {
   helpPanelEl = panel;
 }
 
-function wireToolbar() {
-  document.getElementById('btn-new').addEventListener('click', () => {
-    if (state.nodes.length && !confirm('Clear the entire diagram? This cannot be undone.')) return;
-    resetFlow();
-    clearDiagram();
-  });
+function clearDiagramWithConfirm() {
+  if (state.nodes.length && !confirm('Clear the entire diagram? This cannot be undone.')) return;
+  resetFlow();
+  clearDiagram();
+}
 
+function wireToolbar() {
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
 
   document.getElementById('btn-pattern').addEventListener('click', togglePatternPanel);
-  document.getElementById('btn-help').addEventListener('click', toggleHelpPanel);
+  document.getElementById('btn-palette-toggle').addEventListener('click', togglePalette);
+  document.getElementById('btn-results-toggle').addEventListener('click', toggleResultsPanel);
+  document.getElementById('btn-bar-position').addEventListener('click', toggleToolbarPosition);
 
   document.getElementById('btn-zoom-in').addEventListener('click', zoomIn);
   document.getElementById('btn-zoom-out').addEventListener('click', zoomOut);
   document.getElementById('zoom-label').addEventListener('click', zoomReset);
   document.getElementById('btn-zoom-fit').addEventListener('click', zoomToFit);
-
-  document.getElementById('btn-palette-tab').addEventListener('click', togglePalette);
-  document.getElementById('btn-results-tab').addEventListener('click', toggleResultsPanel);
 
   document.getElementById('btn-view').addEventListener('click', (ev) => {
     ev.stopPropagation();
@@ -297,7 +298,6 @@ function wireToolbar() {
     const items = [
       { label: (showGrid ? '✓ ' : '   ') + 'Grid Background', action: toggleGrid },
       { label: (showRulers ? '✓ ' : '   ') + 'Rulers', action: toggleRulers },
-      { label: (showPalette ? '✓ ' : '   ') + 'Palette', action: togglePalette },
       '-',
       { label: (showSimAnnotations ? '✓ ' : '   ') + 'Latency & Cost (simulated)', action: toggleSimAnnotations },
     ];
@@ -340,10 +340,14 @@ function wireToolbar() {
     if (clipboardNodes && clipboardNodes.length) showContextMenu(x, y, [{ label: 'Paste', action: () => pasteNode() }]);
   });
 
-  document.getElementById('btn-file').addEventListener('click', (ev) => {
+  // Kebab (⋮): everything infrequent — Clear All, Export/Import, Help —
+  // consolidated behind one icon instead of separate File▾/Clear All/? buttons.
+  document.getElementById('btn-more').addEventListener('click', (ev) => {
     ev.stopPropagation();
     const rect = ev.currentTarget.getBoundingClientRect();
     showContextMenu(rect.left, rect.bottom + 4, [
+      { label: 'Clear All', action: clearDiagramWithConfirm },
+      '-',
       { label: 'Export', heading: true },
       { label: '   PNG Image', action: exportPNGFile },
       { label: '   SVG Image', action: exportSVGFile },
@@ -351,6 +355,8 @@ function wireToolbar() {
       { label: '   YAML', action: exportYAMLFile },
       '-',
       { label: 'Import YAML…', action: () => document.getElementById('import-yaml-input').click() },
+      '-',
+      { label: 'Help & Shortcuts', action: () => toggleHelpPanel() },
     ]);
   });
 

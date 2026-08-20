@@ -10,6 +10,9 @@
   --canvas-dot: #d7dee8;
   --input-bg: #ffffff;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  /* Fallback before JS measures the real (possibly wrapped) toolbar height
+     via syncToolbarClearance() in canvas.js. */
+  --toolbar-clearance: 64px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -44,36 +47,85 @@ html, body {
   flex-direction: column;
 }
 
-/* ---------- Top bar ---------- */
+/* ---------- Floating toolbar (Excalidraw-style) ----------
+   The canvas is always full-bleed behind this — see .canvas-wrap below. A
+   single bar (not several independently-positioned islands) so it can wrap
+   onto a second line on a narrow window without any element colliding with
+   another. Flips between the top and bottom edge via #btn-bar-position,
+   which toggles body[data-toolbar-pos] — see toggleToolbarPosition() in
+   canvas.js. Default is top. */
 
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 10px 16px;
-  background: var(--chrome-bg);
-  border-bottom: 1px solid var(--chrome-border);
-  flex-wrap: wrap;
-}
-
-.brand {
+.toolbar-bar {
+  position: absolute;
+  top: 12px; /* default/fallback before JS applies body[data-toolbar-pos] */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+body[data-toolbar-pos='top'] .toolbar-bar { top: 12px; bottom: auto; }
+body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
+
+.tb-zoom {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.tb-zoom .btn {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  border-right: 1px solid var(--chrome-border);
+}
+.tb-zoom .btn:last-child { border-right: none; }
+
+/* Icon-only toolbar buttons — hamburger (palette), bento (patterns), results
+   toggle, kebab (overflow), and the top/bottom flip. */
+.tbtn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--chrome-border);
+  background: var(--input-bg);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.tbtn:hover { border-color: var(--accent); color: var(--accent); }
+.tbtn:active { transform: translateY(1px); }
+
+.tbtn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
 }
 
 .brand-mark {
   color: var(--accent);
   font-size: 18px;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  line-height: 1;
 }
 
 .tb-group {
@@ -128,22 +180,6 @@ html, body {
   font-size: 13px;
 }
 
-.zoom-group {
-  gap: 0;
-  border: 1px solid var(--chrome-border);
-  border-radius: 6px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
-}
-
-.zoom-group .btn {
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  border-right: 1px solid var(--chrome-border);
-}
-.zoom-group .btn:last-child { border-right: none; }
-
 .btn-icon {
   width: 28px;
   padding: 6px 0;
@@ -156,42 +192,46 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 
-.btn-help {
-  border-radius: 50%;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  font-weight: 700;
-}
-
-/* ---------- Body layout ---------- */
+/* ---------- Body layout ----------
+   .body fills the viewport; .canvas-wrap is absolutely positioned edge to
+   edge inside it (see below) so the diagram always gets the full area
+   regardless of which floating panels/islands are open on top of it. */
 
 .body {
   flex: 1;
   min-height: 0;
-  display: flex;
+  position: relative;
 }
 
 .palette {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 12px;
   width: 250px;
-  flex-shrink: 0;
+  z-index: 9;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--chrome-bg);
-  border-right: 1px solid var(--chrome-border);
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
   padding: 10px;
-  transition: width 0.18s ease, padding 0.18s ease, border-color 0.18s ease;
+  transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
+/* Leave clearance for the floating toolbar on whichever edge it's docked —
+   --toolbar-clearance is measured live from the toolbar's real (possibly
+   two-row-wrapped) height by syncToolbarClearance() in canvas.js. */
+body[data-toolbar-pos='top'] .palette,
+body[data-toolbar-pos='top'] .results-panel { top: var(--toolbar-clearance); }
+body[data-toolbar-pos='bottom'] .palette,
+body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance); }
+
 .palette.palette-hidden {
-  width: 0;
-  padding-left: 0;
-  padding-right: 0;
-  border-right-color: transparent;
+  transform: translateX(calc(-100% - 20px));
+  opacity: 0;
+  pointer-events: none;
 }
 
 .palette-search-wrap {
@@ -200,6 +240,7 @@ html, body {
   margin: -10px -10px 8px;
   padding: 10px 10px 8px;
   background: var(--chrome-bg);
+  border-radius: 10px 10px 0 0;
   z-index: 3;
 }
 
@@ -217,24 +258,6 @@ html, body {
 .palette-search:focus {
   outline: none;
   border-color: var(--accent);
-}
-
-.palette-tab {
-  flex-shrink: 0;
-  width: 14px;
-  border: none;
-  border-right: 1px solid var(--chrome-border);
-  background: var(--chrome-bg);
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-}
-
-.palette-tab:hover {
-  background: var(--bg);
-  color: var(--text);
 }
 
 .palette-category {
@@ -298,8 +321,8 @@ html, body {
 }
 
 .canvas-wrap {
-  flex: 1;
-  position: relative;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
 }
 
@@ -654,36 +677,25 @@ html, body {
 /* ---------- Results panel (right sidebar, mirrors .palette on the left) --------- */
 
 .results-panel {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  right: 12px;
   width: 260px;
-  flex-shrink: 0;
+  z-index: 9;
   overflow-y: auto;
   overflow-x: hidden;
   background: var(--chrome-bg);
-  border-left: 1px solid var(--chrome-border);
-  transition: width 0.18s ease, border-color 0.18s ease;
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
 .results-panel.results-hidden {
-  width: 0;
-  border-left-color: transparent;
-}
-
-.results-tab {
-  flex-shrink: 0;
-  width: 14px;
-  border: none;
-  border-left: 1px solid var(--chrome-border);
-  background: var(--chrome-bg);
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-}
-
-.results-tab:hover {
-  background: var(--bg);
-  color: var(--text);
+  transform: translateX(calc(100% + 20px));
+  opacity: 0;
+  pointer-events: none;
 }
 
 .results-panel-header {
@@ -696,6 +708,7 @@ html, body {
   letter-spacing: 0.05em;
   color: var(--text-muted);
   background: var(--chrome-bg);
+  border-radius: 10px 10px 0 0;
 }
 
 .results-panel-content {
@@ -754,16 +767,22 @@ html, body {
   line-height: 1.5;
 }
 
-.brand-footer {
-  padding: 5px 16px;
-  font-size: 11px;
+.brand-watermark {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--text-muted);
-  text-align: center;
-  background: var(--chrome-bg);
-  border-top: 1px solid var(--chrome-border);
+  opacity: 0.55;
+  pointer-events: none;
 }
+
+/* Sits on the edge opposite the toolbar so the two never overlap. */
+body[data-toolbar-pos='top'] .brand-watermark { bottom: 6px; top: auto; }
+body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
 
 /* Inline numeric editor for edge badges */
 

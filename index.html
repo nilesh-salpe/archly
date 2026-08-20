@@ -8,70 +8,11 @@
      and every js/*.js below) so returning visitors' browsers fetch the new files
      instead of serving stale cached ones. See js/patterns.js's ASSET_VERSION for
      the matching bump on the patterns/*.yaml fetches. -->
-<link rel="stylesheet" href="css/styles.css?v=19" />
+<link rel="stylesheet" href="css/styles.css?v=21" />
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark">&#9635;</span>
-        <span>Archly</span>
-      </div>
-      <div class="toolbar">
-        <button id="btn-new" class="btn" title="Clear the canvas and start a new diagram">Clear All</button>
-        <button id="btn-undo" class="btn" title="Undo (Ctrl/Cmd+Z)" disabled>&#8630; Undo</button>
-        <button id="btn-redo" class="btn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>&#8631; Redo</button>
-        <button id="btn-view" class="btn" title="Toggle grid background and rulers">View &#9662;</button>
-
-        <button id="btn-pattern" class="btn" title="Load a pre-built pattern">Patterns &#9662;</button>
-
-        <span class="tb-sep"></span>
-
-        <button id="btn-play" class="btn btn-accent" title="Animate the request flow in arrow order">&#9654; Play</button>
-        <button id="btn-pause" class="btn" title="Pause after the current step">&#10074;&#10074; Pause</button>
-        <button id="btn-reset" class="btn" title="Reset the flow animation">&#8634; Reset</button>
-        <label class="tb-group">
-          <span class="tb-label">Speed</span>
-          <select id="speed-select" class="select">
-            <option value="1600">Slow</option>
-            <option value="900" selected>Normal</option>
-            <option value="450">Fast</option>
-          </select>
-        </label>
-
-        <span class="tb-sep"></span>
-
-        <button id="btn-edit" class="btn" title="Edit the current selection (also available by right-click)" disabled>Edit &#9662;</button>
-
-        <span class="tb-sep"></span>
-
-        <div class="tb-group zoom-group">
-          <button id="btn-zoom-out" class="btn btn-icon" title="Zoom out (Ctrl/Cmd+scroll)">&#8722;</button>
-          <button id="zoom-label" class="btn btn-zoom-label" title="Reset zoom to 100%">100%</button>
-          <button id="btn-zoom-in" class="btn btn-icon" title="Zoom in (Ctrl/Cmd+scroll)">&#43;</button>
-          <button id="btn-zoom-fit" class="btn" title="Fit the whole diagram in view">Fit</button>
-        </div>
-
-        <span class="tb-sep"></span>
-
-        <button id="btn-file" class="btn" title="Export or import a diagram">File &#9662;</button>
-        <input type="file" id="import-yaml-input" accept=".yaml,.yml" style="display:none" />
-        <input type="file" id="image-upload-input" accept="image/*" style="display:none" />
-
-        <button id="btn-help" class="btn btn-help" title="Tips & keyboard shortcuts">?</button>
-      </div>
-    </header>
-
     <div class="body">
-      <aside class="palette" id="palette">
-        <div class="palette-search-wrap">
-          <input type="search" id="palette-search" class="palette-search" placeholder="Search components&hellip;" />
-        </div>
-        <div id="palette-empty" class="palette-empty" style="display:none"></div>
-        <!-- category sections populated by app.js from COMPONENTS -->
-      </aside>
-      <button id="btn-palette-tab" class="palette-tab" title="Show or hide the component palette">&laquo;</button>
-
       <main class="canvas-wrap" id="canvas-wrap">
         <div class="ruler-corner"></div>
         <div class="ruler-h" id="ruler-h"></div>
@@ -79,12 +20,12 @@
         <div id="empty-state" class="empty-state" style="display:none">
           <div class="empty-state-card">
             <p class="empty-state-title">Your canvas is empty</p>
-            <p class="empty-state-body">Drag a component from the left, or start from a pattern:</p>
+            <p class="empty-state-body">Click &#9776; to add a component, or start from a pattern:</p>
             <div class="empty-state-patterns" id="empty-state-patterns"></div>
           </div>
         </div>
         <div class="canvas-scroll" id="canvas-scroll">
-          <svg id="canvas" width="2400" height="1600" viewBox="0 0 2400 1600" xmlns="http://www.w3.org/2000/svg">
+          <svg id="canvas" width="20000" height="20000" viewBox="0 0 20000 20000" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse">
                 <path d="M0,0 L10,5 L0,10 z" class="arrowhead-path"></path>
@@ -99,24 +40,82 @@
         </div>
       </main>
 
-      <button id="btn-results-tab" class="results-tab" title="Show or hide simulation results">&raquo;</button>
+      <!-- One consolidated floating toolbar (Excalidraw-style: the canvas
+           above is always full-bleed, this overlays it) — flips between
+           top/bottom via #btn-bar-position; see body[data-toolbar-pos] in
+           styles.css. Rare actions live behind the kebab (#btn-more); the
+           component palette and pattern library are icon-triggered flyouts
+           (hamburger / bento) instead of always-open drawers. -->
+      <header class="toolbar-bar" id="toolbar-bar">
+        <span class="brand-mark" title="Archly">&#9635;</span>
+
+        <span class="tb-sep"></span>
+        <button id="btn-palette-toggle" class="tbtn" title="Components">&#9776;</button>
+        <button id="btn-pattern" class="tbtn" title="Patterns">&#9638;</button>
+
+        <span class="tb-sep"></span>
+        <button id="btn-undo" class="btn" title="Undo (Ctrl/Cmd+Z)" disabled>&#8630; Undo</button>
+        <button id="btn-redo" class="btn" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>&#8631; Redo</button>
+
+        <span class="tb-sep"></span>
+        <button id="btn-play" class="btn btn-accent" title="Animate the request flow in arrow order">&#9654; Play</button>
+        <button id="btn-pause" class="btn" title="Pause after the current step">&#10074;&#10074; Pause</button>
+        <button id="btn-reset" class="btn" title="Reset the flow animation">&#8634; Reset</button>
+        <label class="tb-group">
+          <span class="tb-label">Speed</span>
+          <select id="speed-select" class="select">
+            <option value="1600">Slow</option>
+            <option value="900" selected>Normal</option>
+            <option value="450">Fast</option>
+          </select>
+        </label>
+
+        <span class="tb-sep"></span>
+        <button id="btn-view" class="btn" title="Toggle grid background, rulers, and simulation">View &#9662;</button>
+        <button id="btn-edit" class="btn" title="Edit the current selection (also available by right-click)" disabled>Edit &#9662;</button>
+        <button id="btn-results-toggle" class="tbtn" title="Simulation results">&#9636;</button>
+
+        <span class="tb-sep"></span>
+        <div class="tb-zoom">
+          <button id="btn-zoom-out" class="btn btn-icon" title="Zoom out (Ctrl/Cmd+scroll)">&#8722;</button>
+          <button id="zoom-label" class="btn btn-zoom-label" title="Reset zoom to 100%">100%</button>
+          <button id="btn-zoom-in" class="btn btn-icon" title="Zoom in (Ctrl/Cmd+scroll)">&#43;</button>
+          <button id="btn-zoom-fit" class="btn" title="Fit the whole diagram in view">Fit</button>
+        </div>
+
+        <span class="tb-sep"></span>
+        <button id="btn-more" class="tbtn" title="More (clear, export/import, help)">&#8942;</button>
+        <button id="btn-bar-position" class="tbtn" title="Move toolbar to bottom">&#8645;</button>
+      </header>
+
+      <input type="file" id="import-yaml-input" accept=".yaml,.yml" style="display:none" />
+      <input type="file" id="image-upload-input" accept="image/*" style="display:none" />
+
+      <aside class="palette" id="palette">
+        <div class="palette-search-wrap">
+          <input type="search" id="palette-search" class="palette-search" placeholder="Search components&hellip;" />
+        </div>
+        <div id="palette-empty" class="palette-empty" style="display:none"></div>
+        <!-- category sections populated by app.js from COMPONENTS -->
+      </aside>
+
       <aside class="results-panel" id="results-panel">
         <div class="results-panel-header">Simulation</div>
         <div id="results-panel-content" class="results-panel-content"></div>
       </aside>
-    </div>
 
-    <div class="brand-footer">SALPE Global Tech &copy; 2026</div>
+      <div class="brand-watermark">SALPE Global Tech &copy; 2026</div>
+    </div>
   </div>
 
-  <script src="js/components.js?v=19"></script>
-  <script src="js/yaml.js?v=19"></script>
-  <script src="js/canvas.js?v=19"></script>
-  <script src="js/arrows.js?v=19"></script>
-  <script src="js/animate.js?v=19"></script>
-  <script src="js/simulate.js?v=19"></script>
-  <script src="js/patterns.js?v=19"></script>
-  <script src="js/export.js?v=19"></script>
-  <script src="js/app.js?v=19"></script>
+  <script src="js/components.js?v=21"></script>
+  <script src="js/yaml.js?v=21"></script>
+  <script src="js/canvas.js?v=21"></script>
+  <script src="js/arrows.js?v=21"></script>
+  <script src="js/animate.js?v=21"></script>
+  <script src="js/simulate.js?v=21"></script>
+  <script src="js/patterns.js?v=21"></script>
+  <script src="js/export.js?v=21"></script>
+  <script src="js/app.js?v=21"></script>
 </body>
 </html>

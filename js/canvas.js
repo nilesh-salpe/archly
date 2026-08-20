@@ -7,8 +7,11 @@ const STORAGE_KEY = 'cad_diagram_v1';
 
 const DEFAULT_NODE_W = 150;
 const DEFAULT_NODE_H = 70;
-const CANVAS_W = 2400;
-const CANVAS_H = 1600;
+// Generously large but still a bounded, native-scrollbar-panned world (not a
+// true unbounded/infinite canvas) — see CLAUDE.md's zoom/pan architecture
+// note. No real diagram gets remotely close to filling this.
+const CANVAS_W = 20000;
+const CANVAS_H = 20000;
 
 const state = {
   nodes: [], // {id, type, category, label, x, y, w, h, container, icon}
@@ -20,7 +23,7 @@ const state = {
 };
 
 let svg, layerContainers, layerEdges, layerNodes, layerOverlay;
-let canvasWrap, canvasScroll, rulerH, rulerV;
+let canvasWrap, canvasScroll, rulerH, rulerV, toolbarBar;
 
 function initCanvas() {
   svg = document.getElementById('canvas');
@@ -33,6 +36,9 @@ function initCanvas() {
   canvasScroll = document.getElementById('canvas-scroll');
   rulerH = document.getElementById('ruler-h');
   rulerV = document.getElementById('ruler-v');
+
+  toolbarBar = document.getElementById('toolbar-bar');
+  window.addEventListener('resize', syncToolbarClearance);
 
   canvasWrap.addEventListener('dragover', onCanvasDragOver);
   canvasWrap.addEventListener('drop', onCanvasDrop);
@@ -326,8 +332,11 @@ function updateUndoRedoButtons() {
 const PREFS_KEY = 'cad_prefs_v1';
 let showGrid = true;
 let showRulers = false;
-let showPalette = true;
-let showResultsPanel = true;
+// Both panels are on-demand flyouts (opened from the toolbar's hamburger/
+// results icons), not docked-open-by-default drawers — see CLAUDE.md.
+let showPalette = false;
+let showResultsPanel = false;
+let toolbarPosition = 'top'; // 'top' | 'bottom' — flipped via the toolbar's ⇅ button
 
 function loadPrefs() {
   try {
@@ -338,6 +347,7 @@ function loadPrefs() {
     if (typeof p.showRulers === 'boolean') showRulers = p.showRulers;
     if (typeof p.showPalette === 'boolean') showPalette = p.showPalette;
     if (typeof p.showResultsPanel === 'boolean') showResultsPanel = p.showResultsPanel;
+    if (p.toolbarPosition === 'top' || p.toolbarPosition === 'bottom') toolbarPosition = p.toolbarPosition;
   } catch (e) {
     /* ignore */
   }
@@ -345,7 +355,7 @@ function loadPrefs() {
 
 function savePrefs() {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ showGrid, showRulers, showPalette, showResultsPanel }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ showGrid, showRulers, showPalette, showResultsPanel, toolbarPosition }));
   } catch (e) {
     /* ignore */
   }
@@ -356,13 +366,26 @@ function applyViewPrefs() {
   canvasWrap.classList.toggle('rulers-on', showRulers);
   const paletteEl = document.getElementById('palette');
   if (paletteEl) paletteEl.classList.toggle('palette-hidden', !showPalette);
-  const tabBtn = document.getElementById('btn-palette-tab');
-  if (tabBtn) tabBtn.innerHTML = showPalette ? '&laquo;' : '&raquo;';
+  const paletteToggleBtn = document.getElementById('btn-palette-toggle');
+  if (paletteToggleBtn) paletteToggleBtn.classList.toggle('active', showPalette);
   const resultsEl = document.getElementById('results-panel');
   if (resultsEl) resultsEl.classList.toggle('results-hidden', !showResultsPanel);
-  const resultsTabBtn = document.getElementById('btn-results-tab');
-  if (resultsTabBtn) resultsTabBtn.innerHTML = showResultsPanel ? '&raquo;' : '&laquo;';
+  const resultsToggleBtn = document.getElementById('btn-results-toggle');
+  if (resultsToggleBtn) resultsToggleBtn.classList.toggle('active', showResultsPanel);
+  document.body.setAttribute('data-toolbar-pos', toolbarPosition);
+  const posBtn = document.getElementById('btn-bar-position');
+  if (posBtn) posBtn.title = toolbarPosition === 'top' ? 'Move toolbar to bottom' : 'Move toolbar to top';
+  syncToolbarClearance();
   updateRulers();
+}
+
+// The toolbar can wrap onto a second row on a narrow window, so the
+// palette/results panel clearance (--toolbar-clearance, styles.css) is
+// measured from the real element instead of a guessed fixed pixel value.
+function syncToolbarClearance() {
+  if (!toolbarBar) return;
+  const clearance = Math.ceil(toolbarBar.getBoundingClientRect().height) + 20;
+  document.documentElement.style.setProperty('--toolbar-clearance', `${clearance}px`);
 }
 
 function toggleGrid() {
@@ -385,6 +408,12 @@ function togglePalette() {
 
 function toggleResultsPanel() {
   showResultsPanel = !showResultsPanel;
+  applyViewPrefs();
+  savePrefs();
+}
+
+function toggleToolbarPosition() {
+  toolbarPosition = toolbarPosition === 'top' ? 'bottom' : 'top';
   applyViewPrefs();
   savePrefs();
 }
