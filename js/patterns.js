@@ -25,7 +25,7 @@ const PATTERN_FILES = [
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '21';
+const ASSET_VERSION = '25';
 
 let PATTERNS = [];
 
@@ -52,6 +52,12 @@ function getPattern(id) {
 function loadPattern(id) {
   const pattern = getPattern(id);
   if (!pattern) return;
+  // Same guard as clearDiagramWithConfirm (app.js) and YAML import
+  // (export.js) — picking a pattern replaces the whole canvas, and the
+  // empty-canvas quick-start buttons never hit this (state.nodes is always
+  // empty there), so this only prompts when it's actually about to discard
+  // something. The Patterns ▾ dropdown was the one entry point missing it.
+  if (state.nodes.length && !confirm('Replace the current diagram with this pattern? This cannot be undone.')) return;
 
   const nodes = [];
   const idMap = {};
@@ -63,6 +69,20 @@ function loadPattern(id) {
     const maxX = Math.max(...pattern.nodes.map((s) => s.x + (s.w || getComponent(s.type).w || DEFAULT_NODE_W)));
     const minY = Math.min(...pattern.nodes.map((s) => s.y));
     const titleW = Math.max(320, pattern.title.length * 11);
+    // A freshly loaded pattern always renders unscrolled and at 100% zoom,
+    // so canvas coordinates equal screen pixels at this moment — which lets
+    // us keep the title clear of the floating toolbar (when it's docked
+    // top) using its real, live-measured bottom edge instead of a guessed
+    // constant that silently drifts out of sync whenever the toolbar's own
+    // height changes. minY - 76 is the preferred default gap above the
+    // diagram; only fall back to hugging the toolbar's bottom edge if that
+    // default would actually be covered by it.
+    const toolbarBarEl = document.getElementById('toolbar-bar');
+    const defaultY = minY - 76;
+    const y =
+      typeof toolbarPosition !== 'undefined' && toolbarPosition === 'top' && toolbarBarEl
+        ? Math.max(defaultY, Math.ceil(toolbarBarEl.getBoundingClientRect().bottom) + 14)
+        : defaultY;
     nodes.push({
       id: nid++,
       type: def.id,
@@ -72,7 +92,7 @@ function loadPattern(id) {
       container: false,
       textOnly: true,
       x: (minX + maxX) / 2 - titleW / 2,
-      y: minY - 76,
+      y,
       w: titleW,
       h: 40,
     });

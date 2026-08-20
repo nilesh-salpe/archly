@@ -10,9 +10,11 @@
   --canvas-dot: #d7dee8;
   --input-bg: #ffffff;
   --shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-  /* Fallback before JS measures the real (possibly wrapped) toolbar height
+  /* Fallback before JS measures the real toolbar/brand/zoom-strip heights
      via syncToolbarClearance() in canvas.js. */
   --toolbar-clearance: 64px;
+  --brand-clearance: 58px;
+  --zoombar-clearance: 58px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,9 +66,10 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   max-width: calc(100vw - 24px);
+  overflow-x: auto;
   padding: 8px 10px;
   background: var(--chrome-bg);
   border: 1px solid var(--chrome-border);
@@ -77,10 +80,20 @@ html, body {
 body[data-toolbar-pos='top'] .toolbar-bar { top: 12px; bottom: auto; }
 body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
 
+/* Zoom/Fit: intentionally its own floating strip (not part of .toolbar-bar)
+   pinned to the bottom-left corner at all times — see .body positioning
+   below. Transparent group background by design: only the individual
+   buttons carry a surface, so the strip itself reads as an overlay rather
+   than another toolbar card. */
 .tb-zoom {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 10;
   display: flex;
   align-items: center;
   gap: 0;
+  background: transparent;
   border: 1px solid var(--chrome-border);
   border-radius: 6px;
   overflow: hidden;
@@ -95,37 +108,42 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
 }
 .tb-zoom .btn:last-child { border-right: none; }
 
-/* Icon-only toolbar buttons — hamburger (palette), bento (patterns), results
-   toggle, kebab (overflow), and the top/bottom flip. */
-.tbtn {
-  width: 30px;
-  height: 30px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--chrome-border);
-  background: var(--input-bg);
-  color: var(--text);
-  border-radius: 6px;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  box-shadow: var(--shadow);
-}
-
-.tbtn:hover { border-color: var(--accent); color: var(--accent); }
-.tbtn:active { transform: translateY(1px); }
-
-.tbtn.active {
+.btn.active {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-contrast);
 }
 
-.brand-mark {
+/* Brand corner: identity only, deliberately separate from .toolbar-bar and
+   fixed to the top-left regardless of body[data-toolbar-pos] — see
+   #btn-bar-position. Not a button: no hover/active state, no cursor
+   change, so it never reads as clickable chrome. */
+.brand-corner {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+}
+
+.brand-corner .brand-mark {
   color: var(--accent);
   font-size: 18px;
   line-height: 1;
+}
+
+.brand-corner .brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
 }
 
 .tb-group {
@@ -192,6 +210,55 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Toolbar buttons that stay icon-only (keeps the single-row toolbar compact)
+   but reveal their name as a custom tooltip-style label on hover/focus,
+   instead of relying only on a native title tooltip's slow default delay —
+   see aria-label (not title, to avoid a second native tooltip stacking on
+   top of this one) on these buttons in index.html. */
+.btn-iconlabel {
+  position: relative;
+  width: 30px;
+  padding: 6px 0;
+  text-align: center;
+}
+
+.btn-icon-glyph {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.btn-iconlabel .btn-label {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-top: 6px;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--text);
+  color: var(--chrome-bg);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: 5px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+  z-index: 20;
+}
+
+body[data-toolbar-pos='bottom'] .btn-iconlabel .btn-label {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 6px;
+}
+
+.btn-iconlabel:hover .btn-label,
+.btn-iconlabel:focus-visible .btn-label {
+  opacity: 1;
+}
+
 /* ---------- Body layout ----------
    .body fills the viewport; .canvas-wrap is absolutely positioned edge to
    edge inside it (see below) so the diagram always gets the full area
@@ -205,8 +272,8 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
 
 .palette {
   position: absolute;
-  top: 12px;
-  bottom: 12px;
+  top: var(--brand-clearance);
+  bottom: var(--zoombar-clearance);
   left: 12px;
   width: 250px;
   z-index: 9;
@@ -220,12 +287,17 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
   transition: transform 0.18s ease, opacity 0.18s ease;
 }
 
-/* Leave clearance for the floating toolbar on whichever edge it's docked —
-   --toolbar-clearance is measured live from the toolbar's real (possibly
-   two-row-wrapped) height by syncToolbarClearance() in canvas.js. */
-body[data-toolbar-pos='top'] .palette,
+/* Leave clearance for whichever floating chrome shares an edge with each
+   panel. --toolbar-clearance/--brand-clearance/--zoombar-clearance are
+   measured live from the real elements' heights by syncToolbarClearance()
+   in canvas.js. The palette sits in the same top-left/bottom-left corners
+   as the brand mark and the zoom strip at all times, so it always clears
+   both of those regardless of where the main toolbar is docked; it only
+   needs to clear the main toolbar on the edge that toolbar currently docks
+   to. */
+body[data-toolbar-pos='top'] .palette { top: max(var(--brand-clearance), var(--toolbar-clearance)); }
+body[data-toolbar-pos='bottom'] .palette { bottom: max(var(--zoombar-clearance), var(--toolbar-clearance)); }
 body[data-toolbar-pos='top'] .results-panel { top: var(--toolbar-clearance); }
-body[data-toolbar-pos='bottom'] .palette,
 body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance); }
 
 .palette.palette-hidden {
@@ -841,6 +913,10 @@ body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
 }
 
 .context-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
   padding: 6px 10px;
   border-radius: 5px;
   cursor: pointer;
@@ -860,6 +936,16 @@ body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
   padding-top: 8px;
 }
 .context-menu-item.heading:hover { background: none; }
+
+/* A row that opens a flyout of its own (Icon, Text Style, Box Color,
+   Simulation, …) instead of acting directly — see buildMenuEl in canvas.js. */
+.context-menu-item.has-submenu.open { background: var(--bg); }
+
+.context-menu-chevron {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+}
 
 .context-menu-sep {
   height: 1px;

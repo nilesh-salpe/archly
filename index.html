@@ -8,7 +8,7 @@
      and every js/*.js below) so returning visitors' browsers fetch the new files
      instead of serving stale cached ones. See js/patterns.js's ASSET_VERSION for
      the matching bump on the patterns/*.yaml fetches. -->
-<link rel="stylesheet" href="css/styles.css?v=21" />
+<link rel="stylesheet" href="css/styles.css?v=25" />
 </head>
 <body>
   <div class="app">
@@ -40,18 +40,24 @@
         </div>
       </main>
 
+      <!-- Brand corner: pure identity, never part of the toolbar's button
+           row and never moves when the toolbar flips edges (#btn-bar-position)
+           — see .brand-corner in styles.css. Not interactive. -->
+      <div class="brand-corner" id="brand-corner" title="Archly">
+        <span class="brand-mark">&#9635;</span>
+        <span class="brand-name">Archly</span>
+      </div>
+
       <!-- One consolidated floating toolbar (Excalidraw-style: the canvas
            above is always full-bleed, this overlays it) — flips between
            top/bottom via #btn-bar-position; see body[data-toolbar-pos] in
            styles.css. Rare actions live behind the kebab (#btn-more); the
            component palette and pattern library are icon-triggered flyouts
-           (hamburger / bento) instead of always-open drawers. -->
+           (hamburger / bento) instead of always-open drawers. Kept to a
+           single non-wrapping row — see flex-wrap:nowrap on .toolbar-bar. -->
       <header class="toolbar-bar" id="toolbar-bar">
-        <span class="brand-mark" title="Archly">&#9635;</span>
-
-        <span class="tb-sep"></span>
-        <button id="btn-palette-toggle" class="tbtn" title="Components">&#9776;</button>
-        <button id="btn-pattern" class="tbtn" title="Patterns">&#9638;</button>
+        <button id="btn-palette-toggle" class="btn btn-iconlabel" aria-label="Components"><span class="btn-icon-glyph">&#9776;</span><span class="btn-label">Components</span></button>
+        <button id="btn-pattern" class="btn btn-iconlabel" aria-label="Patterns"><span class="btn-icon-glyph">&#9638;</span><span class="btn-label">Patterns</span></button>
 
         <span class="tb-sep"></span>
         <button id="btn-undo" class="btn" title="Undo (Ctrl/Cmd+Z)" disabled>&#8630; Undo</button>
@@ -73,20 +79,22 @@
         <span class="tb-sep"></span>
         <button id="btn-view" class="btn" title="Toggle grid background, rulers, and simulation">View &#9662;</button>
         <button id="btn-edit" class="btn" title="Edit the current selection (also available by right-click)" disabled>Edit &#9662;</button>
-        <button id="btn-results-toggle" class="tbtn" title="Simulation results">&#9636;</button>
+        <button id="btn-results-toggle" class="btn btn-iconlabel" aria-label="Simulation results"><span class="btn-icon-glyph">&#9636;</span><span class="btn-label">Results</span></button>
 
         <span class="tb-sep"></span>
-        <div class="tb-zoom">
-          <button id="btn-zoom-out" class="btn btn-icon" title="Zoom out (Ctrl/Cmd+scroll)">&#8722;</button>
-          <button id="zoom-label" class="btn btn-zoom-label" title="Reset zoom to 100%">100%</button>
-          <button id="btn-zoom-in" class="btn btn-icon" title="Zoom in (Ctrl/Cmd+scroll)">&#43;</button>
-          <button id="btn-zoom-fit" class="btn" title="Fit the whole diagram in view">Fit</button>
-        </div>
-
-        <span class="tb-sep"></span>
-        <button id="btn-more" class="tbtn" title="More (clear, export/import, help)">&#8942;</button>
-        <button id="btn-bar-position" class="tbtn" title="Move toolbar to bottom">&#8645;</button>
+        <button id="btn-more" class="btn btn-iconlabel" aria-label="More: clear, export/import, help"><span class="btn-icon-glyph">&#8942;</span><span class="btn-label">More</span></button>
+        <button id="btn-bar-position" class="btn btn-iconlabel" aria-label="Move toolbar to bottom"><span class="btn-icon-glyph">&#8645;</span><span class="btn-label" id="bar-position-label">Bottom</span></button>
       </header>
+
+      <!-- Zoom/Fit: a separate minimal floating strip, deliberately outside
+           the toolbar row and pinned to the bottom-left corner regardless of
+           where the main toolbar is docked — see .tb-zoom position rules. -->
+      <div class="tb-zoom">
+        <button id="btn-zoom-out" class="btn btn-icon" title="Zoom out (Ctrl/Cmd+scroll)">&#8722;</button>
+        <button id="zoom-label" class="btn btn-zoom-label" title="Reset zoom to 100%">100%</button>
+        <button id="btn-zoom-in" class="btn btn-icon" title="Zoom in (Ctrl/Cmd+scroll)">&#43;</button>
+        <button id="btn-zoom-fit" class="btn" title="Fit the whole diagram in view">Fit</button>
+      </div>
 
       <input type="file" id="import-yaml-input" accept=".yaml,.yml" style="display:none" />
       <input type="file" id="image-upload-input" accept="image/*" style="display:none" />
@@ -108,14 +116,14 @@
     </div>
   </div>
 
-  <script src="js/components.js?v=21"></script>
-  <script src="js/yaml.js?v=21"></script>
-  <script src="js/canvas.js?v=21"></script>
-  <script src="js/arrows.js?v=21"></script>
-  <script src="js/animate.js?v=21"></script>
-  <script src="js/simulate.js?v=21"></script>
-  <script src="js/patterns.js?v=21"></script>
-  <script src="js/export.js?v=21"></script>
-  <script src="js/app.js?v=21"></script>
+  <script src="js/components.js?v=25"></script>
+  <script src="js/yaml.js?v=25"></script>
+  <script src="js/canvas.js?v=25"></script>
+  <script src="js/arrows.js?v=25"></script>
+  <script src="js/animate.js?v=25"></script>
+  <script src="js/simulate.js?v=25"></script>
+  <script src="js/patterns.js?v=25"></script>
+  <script src="js/export.js?v=25"></script>
+  <script src="js/app.js?v=25"></script>
 </body>
 </html>

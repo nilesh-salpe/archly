@@ -23,7 +23,7 @@ const state = {
 };
 
 let svg, layerContainers, layerEdges, layerNodes, layerOverlay;
-let canvasWrap, canvasScroll, rulerH, rulerV, toolbarBar;
+let canvasWrap, canvasScroll, rulerH, rulerV, toolbarBar, brandCorner, zoomBar;
 
 function initCanvas() {
   svg = document.getElementById('canvas');
@@ -38,6 +38,8 @@ function initCanvas() {
   rulerV = document.getElementById('ruler-v');
 
   toolbarBar = document.getElementById('toolbar-bar');
+  brandCorner = document.getElementById('brand-corner');
+  zoomBar = document.querySelector('.tb-zoom');
   window.addEventListener('resize', syncToolbarClearance);
 
   canvasWrap.addEventListener('dragover', onCanvasDragOver);
@@ -374,18 +376,31 @@ function applyViewPrefs() {
   if (resultsToggleBtn) resultsToggleBtn.classList.toggle('active', showResultsPanel);
   document.body.setAttribute('data-toolbar-pos', toolbarPosition);
   const posBtn = document.getElementById('btn-bar-position');
-  if (posBtn) posBtn.title = toolbarPosition === 'top' ? 'Move toolbar to bottom' : 'Move toolbar to top';
+  const posLabel = document.getElementById('bar-position-label');
+  const movesTo = toolbarPosition === 'top' ? 'bottom' : 'top';
+  if (posBtn) posBtn.setAttribute('aria-label', `Move toolbar to ${movesTo}`);
+  if (posLabel) posLabel.textContent = movesTo === 'bottom' ? 'Bottom' : 'Top';
   syncToolbarClearance();
   updateRulers();
 }
 
-// The toolbar can wrap onto a second row on a narrow window, so the
-// palette/results panel clearance (--toolbar-clearance, styles.css) is
-// measured from the real element instead of a guessed fixed pixel value.
+// The toolbar can still be taller than one line's worth on a very narrow
+// window (it scrolls horizontally rather than wrapping — see
+// flex-wrap:nowrap on .toolbar-bar — but padding/border still contribute),
+// so the palette/results panel clearance (--toolbar-clearance etc.,
+// styles.css) is measured from the real elements instead of a guessed fixed
+// pixel value. The brand corner and zoom strip are fixed to the top-left/
+// bottom-left corners independent of the toolbar's own position, so they
+// get their own clearance vars rather than folding into --toolbar-clearance.
 function syncToolbarClearance() {
-  if (!toolbarBar) return;
-  const clearance = Math.ceil(toolbarBar.getBoundingClientRect().height) + 20;
-  document.documentElement.style.setProperty('--toolbar-clearance', `${clearance}px`);
+  const setClearance = (name, el) => {
+    if (!el) return;
+    const clearance = Math.ceil(el.getBoundingClientRect().height) + 20;
+    document.documentElement.style.setProperty(name, `${clearance}px`);
+  };
+  setClearance('--toolbar-clearance', toolbarBar);
+  setClearance('--brand-clearance', brandCorner);
+  setClearance('--zoombar-clearance', zoomBar);
 }
 
 function toggleGrid() {
@@ -2177,18 +2192,40 @@ function duplicateSelected() {
 }
 
 // ---------- Context menus ----------
+//
+// Items are {label, action}, {label, heading:true} (non-clickable section
+// label), {label, submenu:[...items]} (a flyout — see below), or the string
+// '-' (separator). submenu lets a group of related rows (Text Style, Box
+// Color, Simulation, …) collapse into one row instead of sitting flat in an
+// already-long menu; buildMenuEl is shared by the top-level menu and every
+// nested flyout so they look and behave identically. All open menu/flyout
+// elements are tracked in openMenuEls so hideContextMenu() (called globally
+// on any outside click — see window 'click' in initCanvas) tears the whole
+// stack down at once, not just the top-level one.
 
 let contextMenuEl = null;
+let openMenuEls = [];
 
 function hideContextMenu() {
-  if (contextMenuEl) {
-    contextMenuEl.remove();
-    contextMenuEl = null;
-  }
+  for (const el of openMenuEls) el.remove();
+  openMenuEls = [];
+  contextMenuEl = null;
 }
 
-function showContextMenu(clientX, clientY, items) {
-  hideContextMenu();
+// Positions `el` on-screen near (x, y), preferring to grow right/down but
+// flipping to stay within the viewport — shared by the top-level menu
+// (anchored to the cursor or a toolbar button) and submenus (anchored to
+// their parent row).
+function positionFloatingEl(el, x, y) {
+  const rect = el.getBoundingClientRect();
+  let left = x, top = y;
+  if (left + rect.width > window.innerWidth) left = window.innerWidth - rect.width - 8;
+  if (top + rect.height > window.innerHeight) top = window.innerHeight - rect.height - 8;
+  el.style.left = `${Math.max(4, left)}px`;
+  el.style.top = `${Math.max(4, top)}px`;
+}
+
+function buildMenuEl(items) {
   const menu = document.createElement('div');
   menu.className = 'context-menu';
 
@@ -2198,9 +2235,35 @@ function showContextMenu(clientX, clientY, items) {
       continue;
     }
     const row = document.createElement('div');
-    row.className = 'context-menu-item' + (item.heading ? ' heading' : '');
-    row.textContent = item.label;
-    if (!item.heading) {
+    row.className = 'context-menu-item' + (item.heading ? ' heading' : '') + (item.submenu ? ' has-submenu' : '');
+    const label = document.createElement('span');
+    label.textContent = item.label;
+    row.appendChild(label);
+
+    if (item.submenu) {
+      const chevron = document.createElement('span');
+      chevron.className = 'context-menu-chevron';
+      chevron.textContent = '›';
+      row.appendChild(chevron);
+
+      let submenuEl = null;
+      const openSubmenu = () => {
+        // Only one flyout open per parent menu at a time.
+        for (const sib of menu.querySelectorAll('.context-menu-item.open')) sib.classList.remove('open');
+        if (submenuEl) return;
+        row.classList.add('open');
+        submenuEl = buildMenuEl(item.submenu);
+        document.body.appendChild(submenuEl);
+        openMenuEls.push(submenuEl);
+        const r = row.getBoundingClientRect();
+        positionFloatingEl(submenuEl, r.right + 2, r.top - 4);
+      };
+      row.addEventListener('mouseenter', openSubmenu);
+      row.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openSubmenu();
+      });
+    } else if (!item.heading) {
       row.addEventListener('click', (ev) => {
         ev.stopPropagation();
         hideContextMenu();
@@ -2210,16 +2273,16 @@ function showContextMenu(clientX, clientY, items) {
     menu.appendChild(row);
   }
 
-  document.body.appendChild(menu);
-  contextMenuEl = menu;
+  return menu;
+}
 
-  // Keep the menu on-screen near the cursor.
-  const rect = menu.getBoundingClientRect();
-  let left = clientX, top = clientY;
-  if (left + rect.width > window.innerWidth) left = window.innerWidth - rect.width - 8;
-  if (top + rect.height > window.innerHeight) top = window.innerHeight - rect.height - 8;
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
+function showContextMenu(clientX, clientY, items) {
+  hideContextMenu();
+  const menu = buildMenuEl(items);
+  document.body.appendChild(menu);
+  openMenuEls.push(menu);
+  contextMenuEl = menu;
+  positionFloatingEl(menu, clientX, clientY);
 }
 
 function buildNodeMenuItems(n, menuX, menuY) {
@@ -2246,13 +2309,16 @@ function buildNodeMenuItems(n, menuX, menuY) {
       });
     }
   }
+  // Icon / Text Style / Box Color / Simulation each collapse into one row
+  // with a flyout (see submenu support in showContextMenu) instead of
+  // sitting flat in an already-long menu — the group's own name is enough
+  // context once it's nested, so the items inside drop the indentation
+  // spaces the old flat layout used to fake grouping.
   if (!n.textOnly && !n.container && !n.imageOnly) {
-    items.push('-');
-    items.push({ label: 'Icon', heading: true });
-    items.push({ label: n.customIcon ? '   Replace Icon…' : '   Custom Icon…', action: () => promptImageUpload(n, 'customIcon') });
+    const iconItems = [{ label: n.customIcon ? 'Replace Icon…' : 'Custom Icon…', action: () => promptImageUpload(n, 'customIcon') }];
     if (n.customIcon) {
-      items.push({
-        label: '   Reset to Default Icon',
+      iconItems.push({
+        label: 'Reset to Default Icon',
         action: () => {
           n.customIcon = undefined;
           renderAll();
@@ -2260,61 +2326,64 @@ function buildNodeMenuItems(n, menuX, menuY) {
         },
       });
     }
+    items.push('-');
+    items.push({ label: 'Icon', submenu: iconItems });
   }
   if (!n.container && !n.imageOnly) {
-    items.push('-');
-    items.push({ label: 'Text Style', heading: true });
-    for (const style of Object.keys(TEXT_STYLE_LABELS)) {
+    const textStyleItems = Object.keys(TEXT_STYLE_LABELS).map((style) => {
       const active = (n.textStyle || 'normal') === style;
-      items.push({
+      return {
         label: (active ? '✓ ' : '   ') + TEXT_STYLE_LABELS[style],
         action: () => setTextStyle(n, style),
-      });
-    }
-    items.push({
-      label: '   Text Color…',
-      action: () => openTextColorPanel(n, menuX, menuY),
+      };
     });
+    textStyleItems.push('-');
+    textStyleItems.push({ label: 'Text Color…', action: () => openTextColorPanel(n, menuX, menuY) });
+    items.push('-');
+    items.push({ label: 'Text Style', submenu: textStyleItems });
   }
   if (!n.textOnly) {
-    items.push('-');
-    items.push({ label: 'Box Color', heading: true });
-    items.push({ label: '   Fill…', action: () => openBoxFillColorPanel(n, menuX, menuY) });
-    items.push({ label: '   Border…', action: () => openBoxBorderColorPanel(n, menuX, menuY) });
+    const boxColorItems = [
+      { label: 'Fill…', action: () => openBoxFillColorPanel(n, menuX, menuY) },
+      { label: 'Border…', action: () => openBoxBorderColorPanel(n, menuX, menuY) },
+    ];
     if (n.fillColor || n.strokeColor) {
-      items.push({ label: '   Reset Colors', action: () => resetNodeColors(n) });
+      boxColorItems.push({ label: 'Reset Colors', action: () => resetNodeColors(n) });
     }
+    items.push('-');
+    items.push({ label: 'Box Color', submenu: boxColorItems });
   }
   if (!n.container && !n.textOnly && !n.imageOnly) {
-    items.push('-');
-    items.push({ label: 'Simulation', heading: true });
+    const simItems = [];
     if (computeOrigins().some((o) => o.id === n.id)) {
-      items.push({
-        label: `   RPS: ${typeof n.rps === 'number' ? formatRps(n.rps) : '— (unset)'}`,
+      simItems.push({
+        label: `RPS: ${typeof n.rps === 'number' ? formatRps(n.rps) : '— (unset)'}`,
         action: () => openRpsEditor(n, menuX, menuY),
       });
     }
-    items.push({
-      label: `   Latency: ${formatLatency(nodeLatencyMs(n))}${typeof n.latencyMs === 'number' ? '' : ' (default)'}`,
+    simItems.push({
+      label: `Latency: ${formatLatency(nodeLatencyMs(n))}${typeof n.latencyMs === 'number' ? '' : ' (default)'}`,
       action: () => openLatencyEditor(n, menuX, menuY),
     });
-    items.push({
-      label: `   Cost: ${formatCost(nodeFixedCostPerHour(n))}${typeof n.costPerHour === 'number' ? '' : ' (default)'}`,
+    simItems.push({
+      label: `Cost: ${formatCost(nodeFixedCostPerHour(n))}${typeof n.costPerHour === 'number' ? '' : ' (default)'}`,
       action: () => openCostEditor(n, menuX, menuY),
     });
-    items.push({
-      label: `   Variable Cost: ${formatCostPer100Rps(nodeVariableCostPer100Rps(n))}${typeof n.costPer100Rps === 'number' ? '' : ' (default)'}`,
+    simItems.push({
+      label: `Variable Cost: ${formatCostPer100Rps(nodeVariableCostPer100Rps(n))}${typeof n.costPer100Rps === 'number' ? '' : ' (default)'}`,
       action: () => openVariableCostEditor(n, menuX, menuY),
     });
     // Only offered while the Latency & Cost view is on, so with it off the
     // diagram is guaranteed to render exactly as if chaos didn't exist.
     if (showSimAnnotations) {
       const isFailed = simFailedNodeIds.has(n.id);
-      items.push({
+      simItems.push({
         label: (isFailed ? '✓ ' : '   ') + 'Simulate Failure',
         action: () => toggleNodeFailure(n.id),
       });
     }
+    items.push('-');
+    items.push({ label: 'Simulation', submenu: simItems });
   }
   items.push('-');
   items.push({ label: 'Bring to Front    ]', action: () => bringToFront(n.id) });
@@ -2392,42 +2461,46 @@ const LABEL_SIZE_OPTIONS = [
 ];
 
 function buildEdgeMenuItems(e, menuX, menuY) {
-  const items = [{ label: 'Line Style', heading: true }];
-  for (const opt of LINE_STYLE_OPTIONS) {
+  // Each group collapses into one row with a flyout (see submenu support in
+  // showContextMenu) instead of sitting flat — this menu has the most
+  // groups of any in the app, so it benefits the most.
+  const lineStyleItems = LINE_STYLE_OPTIONS.map((opt) => {
     const active = (e.lineStyle || 'solid') === opt.key;
-    items.push({
-      label: (active ? '✓ ' : '   ') + opt.label,
+    return {
+      label: (active ? '✓ ' : '   ') + opt.label,
       action: () => {
         e.lineStyle = opt.key;
         renderAll();
         saveState();
       },
-    });
-  }
-  items.push('-');
-  items.push({ label: 'Routing (drag the line to move its bend)', heading: true });
+    };
+  });
+
   const isOrthogonal = e.routing === 'orthogonal';
-  items.push({
-    label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved',
-    action: () => {
-      e.routing = undefined;
-      renderAll();
-      saveState();
+  const routingItems = [
+    { label: 'Drag the line to move its bend', heading: true },
+    {
+      label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved',
+      action: () => {
+        e.routing = undefined;
+        renderAll();
+        saveState();
+      },
     },
-  });
-  items.push({
-    label: (isOrthogonal ? '✓ ' : '   ') + 'Orthogonal',
-    action: () => {
-      e.routing = 'orthogonal';
-      e.curve = undefined;
-      renderAll();
-      saveState();
+    {
+      label: (isOrthogonal ? '✓ ' : '   ') + 'Orthogonal',
+      action: () => {
+        e.routing = 'orthogonal';
+        e.curve = undefined;
+        renderAll();
+        saveState();
+      },
     },
-  });
+  ];
   const hasElbowOffset = (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) || (typeof e.elbowOffsetEnd === 'number' && e.elbowOffsetEnd !== 0);
   if (e.curve || hasElbowOffset || (e.waypoints && e.waypoints.length)) {
-    items.push({
-      label: '   Straighten (clear bend points)',
+    routingItems.push({
+      label: 'Straighten (clear bend points)',
       action: () => {
         e.curve = undefined;
         e.elbowOffset = undefined;
@@ -2438,20 +2511,20 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       },
     });
   }
-  items.push('-');
-  items.push({ label: 'Arrowhead', heading: true });
-  for (const opt of ARROW_STYLE_OPTIONS) {
+
+  const arrowheadItems = ARROW_STYLE_OPTIONS.map((opt) => {
     const active = (e.arrowStyle || 'end') === opt.key;
-    items.push({
-      label: (active ? '✓ ' : '   ') + opt.label,
+    return {
+      label: (active ? '✓ ' : '   ') + opt.label,
       action: () => {
         e.arrowStyle = opt.key;
         renderAll();
         saveState();
       },
-    });
-  }
-  items.push({
+    };
+  });
+  arrowheadItems.push('-');
+  arrowheadItems.push({
     label: (e.animated ? '✓ ' : '   ') + 'Animate Flow',
     action: () => {
       e.animated = !e.animated;
@@ -2459,23 +2532,23 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       saveState();
     },
   });
-  items.push('-');
-  items.push({ label: 'Thickness', heading: true });
-  for (const opt of THICKNESS_OPTIONS) {
+
+  const thicknessItems = THICKNESS_OPTIONS.map((opt) => {
     const active = (e.strokeWidth || 2) === opt.key;
-    items.push({
+    return {
       label: (active ? '✓ ' : '   ') + opt.label,
       action: () => {
         e.strokeWidth = opt.key === 2 ? undefined : opt.key;
         renderAll();
         saveState();
       },
-    });
-  }
-  items.push({ label: '   Color…', action: () => openEdgeColorPanel(e, menuX, menuY) });
+    };
+  });
+  thicknessItems.push('-');
+  thicknessItems.push({ label: 'Color…', action: () => openEdgeColorPanel(e, menuX, menuY) });
   if (e.color) {
-    items.push({
-      label: '   Reset Color',
+    thicknessItems.push({
+      label: 'Reset Color',
       action: () => {
         e.color = undefined;
         renderAll();
@@ -2483,23 +2556,22 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       },
     });
   }
-  items.push('-');
-  items.push({ label: 'Protocol Label', heading: true });
-  for (const p of PROTOCOL_PRESETS) {
+
+  const protocolItems = PROTOCOL_PRESETS.map((p) => {
     const active = e.protocol === p;
-    items.push({
+    return {
       label: (active ? '✓ ' : '   ') + p,
       action: () => {
         e.protocol = p;
         renderAll();
         saveState();
       },
-    });
-  }
-  items.push({ label: '   Custom…', action: () => openProtocolEditor(e, menuX, menuY) });
+    };
+  });
+  protocolItems.push({ label: 'Custom…', action: () => openProtocolEditor(e, menuX, menuY) });
   if (e.protocol) {
-    items.push({
-      label: '   Clear Label',
+    protocolItems.push({
+      label: 'Clear Label',
       action: () => {
         e.protocol = null;
         renderAll();
@@ -2507,11 +2579,11 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       },
     });
   }
-  items.push('-');
-  items.push({ label: 'Label Style (drag the label to reposition)', heading: true });
+
+  const labelStyleItems = [{ label: 'Drag the label to reposition', heading: true }];
   for (const opt of LABEL_SIZE_OPTIONS) {
     const active = (e.labelSize || 'normal') === opt.key;
-    items.push({
+    labelStyleItems.push({
       label: (active ? '✓ ' : '   ') + opt.label,
       action: () => {
         e.labelSize = opt.key === 'normal' ? undefined : opt.key;
@@ -2520,7 +2592,7 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       },
     });
   }
-  items.push({
+  labelStyleItems.push({
     label: (e.labelBold ? '✓ ' : '   ') + 'Bold',
     action: () => {
       e.labelBold = !e.labelBold;
@@ -2528,7 +2600,7 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       saveState();
     },
   });
-  items.push({
+  labelStyleItems.push({
     label: (e.labelItalic ? '✓ ' : '   ') + 'Italic',
     action: () => {
       e.labelItalic = !e.labelItalic;
@@ -2536,10 +2608,10 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       saveState();
     },
   });
-  items.push({ label: '   Color…', action: () => openEdgeLabelColorPanel(e, menuX, menuY) });
+  labelStyleItems.push({ label: 'Color…', action: () => openEdgeLabelColorPanel(e, menuX, menuY) });
   if (e.labelOffset) {
-    items.push({
-      label: '   Reset Label Position',
+    labelStyleItems.push({
+      label: 'Reset Label Position',
       action: () => {
         e.labelOffset = undefined;
         renderAll();
@@ -2547,6 +2619,15 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       },
     });
   }
+
+  const items = [
+    { label: 'Line Style', submenu: lineStyleItems },
+    { label: 'Routing', submenu: routingItems },
+    { label: 'Arrowhead', submenu: arrowheadItems },
+    { label: 'Thickness & Color', submenu: thicknessItems },
+    { label: 'Protocol Label', submenu: protocolItems },
+    { label: 'Label Style', submenu: labelStyleItems },
+  ];
   // Only offered while the Latency & Cost view is on, so with it off the
   // diagram is guaranteed to render exactly as if chaos didn't exist. A
   // *connection* failure — the link is down but both endpoints are
