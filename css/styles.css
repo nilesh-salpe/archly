@@ -411,7 +411,8 @@ html, body {
   cursor: grab;
 }
 
-.node.selected .node-body {
+.node.selected .node-body,
+.node.selected .image-frame {
   stroke: var(--accent);
   stroke-width: 3;
 }
@@ -422,6 +423,27 @@ html, body {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.node-custom-icon {
+  pointer-events: none;
+}
+
+/* The "Image" tool's box — see renderImageNode in canvas.js. Shares the
+   node-body's selected/flow-active/sim-failed state rules below (added
+   alongside .node-body/.container-rect in each) so it's highlighted the
+   same way as every other node kind. */
+.image-frame {
+  stroke-width: 2;
+  cursor: grab;
+}
+
+.image-placeholder-label {
+  font-size: 11px;
+  font-weight: 500;
+  fill: var(--text-muted);
+  text-anchor: middle;
   pointer-events: none;
 }
 
@@ -545,7 +567,8 @@ html, body {
 
 /* Flow animation highlight states */
 
-.node.flow-active .node-body {
+.node.flow-active .node-body,
+.node.flow-active .image-frame {
   stroke: #f59e0b;
   stroke-width: 3;
   animation: pulse-node 0.9s ease-in-out infinite;

@@ -36,6 +36,7 @@ function initCanvas() {
 
   canvasWrap.addEventListener('dragover', onCanvasDragOver);
   canvasWrap.addEventListener('drop', onCanvasDrop);
+  document.getElementById('image-upload-input').addEventListener('change', onImageFileChosen);
   canvasWrap.addEventListener('pointerdown', onCanvasPointerDown);
   canvasWrap.addEventListener('click', onCanvasClick);
   canvasWrap.addEventListener('contextmenu', onCanvasContextMenu);
@@ -99,6 +100,7 @@ function addNode(componentId, cx, cy) {
     icon: def.icon,
     container: !!def.container,
     textOnly: !!def.textOnly,
+    imageOnly: !!def.imageOnly,
     x: cx - w / 2,
     y: cy - h / 2,
     w,
@@ -121,6 +123,74 @@ function removeNode(nodeId) {
 function removeEdge(edgeId) {
   state.edges = state.edges.filter((e) => e.id !== edgeId);
   simFailedEdgeIds.delete(edgeId);
+}
+
+// ---------- Image upload ----------
+// Uploaded images (the standalone "Image" node's imageOnly picture, and a
+// regular component's custom icon override) are stored as data: URLs
+// directly on the node — no server, matching the rest of the app's
+// no-backend design. That means they travel through undo/redo, autosave,
+// and YAML export/import for free (plain JSON fields), but also that a
+// large file inflates localStorage/YAML noticeably — MAX_IMAGE_BYTES below
+// is a soft guard against that, not a hard technical limit.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+// Set right before the hidden #image-upload-input is clicked, read (and
+// cleared) by onImageFileChosen once the browser's file picker resolves —
+// there's only ever one upload in flight at a time, so a single module-level
+// slot is enough (same pattern as dragCtx/resizeCtx for other single-flight
+// interactions).
+let imageUploadTarget = null;
+
+function promptImageUpload(node, field) {
+  imageUploadTarget = { node, field };
+  document.getElementById('image-upload-input').click();
+}
+
+function onImageFileChosen(ev) {
+  const target = imageUploadTarget;
+  imageUploadTarget = null;
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = ''; // clear so picking the same file again still fires 'change'
+  if (!file || !target) return;
+  if (!file.type.startsWith('image/')) {
+    alert('Please choose an image file.');
+    return;
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    alert(`That image is too large (${Math.round(file.size / 1024 / 1024)}MB) — please choose one under ${MAX_IMAGE_BYTES / 1024 / 1024}MB.`);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    target.node[target.field] = reader.result;
+    if (target.field === 'imageSrc') recomputeImageNodeSize(target.node, reader.result);
+    renderAll();
+    saveState();
+  };
+  reader.onerror = () => alert('Could not read that image file.');
+  reader.readAsDataURL(file);
+}
+
+// A freshly-placed Image node starts at the palette's generic 220×150
+// default, which rarely matches the picked photo's own aspect ratio —
+// re-fit its height (width stays put, so it doesn't suddenly outgrow
+// wherever the user dropped it) once the actual image dimensions are known.
+// Only runs the first time an image is set on a node with no prior image,
+// so replacing an existing image never resizes a box the user already
+// adjusted by hand.
+function recomputeImageNodeSize(node, dataUrl) {
+  if (node.imageSizedOnce) return;
+  const probe = new Image();
+  probe.onload = () => {
+    if (probe.naturalWidth > 0) {
+      node.h = Math.max(60, Math.round(node.w * (probe.naturalHeight / probe.naturalWidth)));
+    }
+    node.imageSizedOnce = true;
+    renderAll();
+    saveState();
+  };
+  probe.src = dataUrl;
 }
 
 function nodeById(id) {
@@ -434,7 +504,8 @@ function renderAll() {
     if (g) layerEdges.appendChild(g);
   }
   for (const n of state.nodes) {
-    if (!n.container) layerNodes.appendChild(renderRegularNode(n));
+    if (n.container) continue;
+    layerNodes.appendChild(n.imageOnly ? renderImageNode(n) : renderRegularNode(n));
   }
 
   const emptyState = document.getElementById('empty-state');
@@ -493,7 +564,7 @@ function renderContainerNode(n) {
   g.appendChild(resize);
 
   rect.addEventListener('pointerdown', (ev) => startDragNode(ev, n));
-  resize.addEventListener('pointerdown', (ev) => startResizeContainer(ev, n));
+  resize.addEventListener('pointerdown', (ev) => startResizeNode(ev, n));
   labelHit.addEventListener('click', (ev) => {
     ev.stopPropagation();
     openRename(n);
@@ -690,11 +761,27 @@ function renderRegularNode(n) {
     stroke,
   });
 
+  // Custom Icon (right-click → Icon → Custom Icon…) swaps the built-in
+  // stroke-SVG glyph for an uploaded image in the same slot — a plain <image>
+  // sized to the icon box rather than the 24-unit-viewBox scale trick the
+  // built-in icons use, since an uploaded image has no fixed internal grid.
   let iconG = null;
   if (!n.textOnly) {
     const iconSize = 26;
-    iconG = el('g', { class: 'node-icon', transform: `translate(${n.w / 2 - iconSize / 2},8) scale(${iconSize / 24})` });
-    iconG.innerHTML = ICONS[n.icon] || '';
+    if (n.customIcon) {
+      iconG = el('image', {
+        class: 'node-custom-icon',
+        x: n.w / 2 - iconSize / 2,
+        y: 8,
+        width: iconSize,
+        height: iconSize,
+        href: n.customIcon,
+        preserveAspectRatio: 'xMidYMid meet',
+      });
+    } else {
+      iconG = el('g', { class: 'node-icon', transform: `translate(${n.w / 2 - iconSize / 2},8) scale(${iconSize / 24})` });
+      iconG.innerHTML = ICONS[n.icon] || '';
+    }
   }
 
   const label = n.textOnly ? buildTextOnlyLabel(n) : buildRegularLabel(n);
@@ -720,6 +807,79 @@ function renderRegularNode(n) {
     ev.stopPropagation();
     openRename(n);
   });
+  g.addEventListener('click', (ev) => onNodeClick(ev, n));
+  g.addEventListener('contextmenu', (ev) => onNodeContextMenu(ev, n));
+
+  return g;
+}
+
+// The freeform "Image" tool — an uploaded picture (node.imageSrc, a data:
+// URL) with no icon/label split, just a frame. `preserveAspectRatio="xMidYMid
+// meet"` (contain, not crop) so an arbitrary upload never loses content;
+// n.fillColor (Box Color → Fill…, same field regular nodes use) shows as the
+// letterbox backdrop when the image's aspect ratio doesn't match the box's.
+// Before an image is picked (or after Remove Image) it's a click-to-upload
+// placeholder — that state deliberately skips border-drag-to-connect (there's
+// nothing yet to connect a flow arrow to) and uses plain node dragging
+// instead, same as a container/text-only node.
+function renderImageNode(n) {
+  const g = el('g', { class: 'node image-node', 'data-node-id': n.id, transform: `translate(${n.x},${n.y})` });
+  if (isNodeSelected(n.id)) g.classList.add('selected');
+
+  const hasImage = !!n.imageSrc;
+  const fill = n.fillColor || CATEGORY_FILLS[n.category] || '#f8fafc';
+  const stroke = n.strokeColor || CATEGORY_COLORS[n.category] || '#94a3b8';
+  const frame = el('rect', { class: 'image-frame', x: 0, y: 0, width: n.w, height: n.h, rx: 8, fill, stroke });
+  g.appendChild(frame);
+
+  if (hasImage) {
+    const clipId = `image-clip-${n.id}`;
+    const clip = el('clipPath', { id: clipId });
+    clip.appendChild(el('rect', { x: 0, y: 0, width: n.w, height: n.h, rx: 8 }));
+    g.appendChild(clip);
+    // pointer-events: none — the picture sits directly on top of `frame` in
+    // paint order, and without this it silently swallows every pointerdown
+    // (drag/connect/resize all wired on `frame`, not here) since sibling
+    // elements don't bubble into each other. Same reasoning as
+    // .node-custom-icon below.
+    g.appendChild(el('image', {
+      x: 0,
+      y: 0,
+      width: n.w,
+      height: n.h,
+      href: n.imageSrc,
+      preserveAspectRatio: 'xMidYMid meet',
+      'clip-path': `url(#${clipId})`,
+      style: 'pointer-events: none;',
+    }));
+  } else {
+    const iconSize = 28;
+    const iconG = el('g', { class: 'node-icon', transform: `translate(${n.w / 2 - iconSize / 2},${n.h / 2 - iconSize / 2 - 10}) scale(${iconSize / 24})` });
+    iconG.innerHTML = ICONS.image || '';
+    g.appendChild(iconG);
+    g.appendChild(el('text', { class: 'image-placeholder-label', x: n.w / 2, y: n.h / 2 + 24 }, textNode('Click to add image')));
+  }
+
+  const resize = el('rect', { class: 'resize-handle', x: n.w - 10, y: n.h - 10, width: 10, height: 10 });
+  g.appendChild(resize);
+
+  if (hasImage) {
+    frame.addEventListener('pointerdown', (ev) => startDragOrConnect(ev, n));
+    frame.addEventListener('pointermove', (ev) => updateBorderCursor(ev, n, frame));
+    frame.addEventListener('pointerleave', () => { frame.style.cursor = ''; });
+    frame.addEventListener('dblclick', (ev) => {
+      ev.stopPropagation();
+      promptImageUpload(n, 'imageSrc');
+    });
+  } else {
+    frame.style.cursor = 'pointer';
+    frame.addEventListener('pointerdown', (ev) => startDragNode(ev, n));
+    frame.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      promptImageUpload(n, 'imageSrc');
+    });
+  }
+  resize.addEventListener('pointerdown', (ev) => startResizeNode(ev, n));
   g.addEventListener('click', (ev) => onNodeClick(ev, n));
   g.addEventListener('contextmenu', (ev) => onNodeContextMenu(ev, n));
 
@@ -1264,7 +1424,11 @@ function onCanvasDrop(ev) {
   const componentId = ev.dataTransfer.getData('text/component-id');
   if (!componentId) return;
   const { x, y } = toSVGCoords(ev.clientX, ev.clientY);
-  addNode(componentId, x, y);
+  const node = addNode(componentId, x, y);
+  // Dropping the Image tool is pointless without a picture — go straight to
+  // the file picker instead of leaving an empty placeholder the user then
+  // has to click separately.
+  if (node && node.imageOnly) promptImageUpload(node, 'imageSrc');
 }
 
 // ---------- Node dragging (single node, or the whole multi-selection together) ----------
@@ -1462,11 +1626,13 @@ function onCanvasClick() {
   renderAll();
 }
 
-// ---------- Container resizing ----------
+// ---------- Manual resize (containers + Image nodes — the only node kinds
+// with a drag-resize handle; every other component's box size comes from
+// its palette definition) ----------
 
 let resizeCtx = null;
 
-function startResizeContainer(ev, node) {
+function startResizeNode(ev, node) {
   ev.stopPropagation();
   ev.preventDefault();
   selectItem('node', node.id);
@@ -2029,11 +2195,44 @@ function showContextMenu(clientX, clientY, items) {
 
 function buildNodeMenuItems(n, menuX, menuY) {
   const items = [
-    { label: 'Rename', action: () => openRename(n) },
     { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
     { label: 'Copy    ⌘C', action: () => copySelectedNode() },
   ];
-  if (!n.container) {
+  // Image nodes have no on-canvas label element for openRename to attach an
+  // inline editor to (renderImageNode deliberately doesn't render label text
+  // over the picture) — so Rename would silently no-op there.
+  if (!n.imageOnly) items.unshift({ label: 'Rename', action: () => openRename(n) });
+  if (n.imageOnly) {
+    items.push('-');
+    items.push({ label: 'Image', heading: true });
+    items.push({ label: n.imageSrc ? '   Replace Image…' : '   Upload Image…', action: () => promptImageUpload(n, 'imageSrc') });
+    if (n.imageSrc) {
+      items.push({
+        label: '   Remove Image',
+        action: () => {
+          n.imageSrc = undefined;
+          renderAll();
+          saveState();
+        },
+      });
+    }
+  }
+  if (!n.textOnly && !n.container && !n.imageOnly) {
+    items.push('-');
+    items.push({ label: 'Icon', heading: true });
+    items.push({ label: n.customIcon ? '   Replace Icon…' : '   Custom Icon…', action: () => promptImageUpload(n, 'customIcon') });
+    if (n.customIcon) {
+      items.push({
+        label: '   Reset to Default Icon',
+        action: () => {
+          n.customIcon = undefined;
+          renderAll();
+          saveState();
+        },
+      });
+    }
+  }
+  if (!n.container && !n.imageOnly) {
     items.push('-');
     items.push({ label: 'Text Style', heading: true });
     for (const style of Object.keys(TEXT_STYLE_LABELS)) {
@@ -2057,7 +2256,7 @@ function buildNodeMenuItems(n, menuX, menuY) {
       items.push({ label: '   Reset Colors', action: () => resetNodeColors(n) });
     }
   }
-  if (!n.container && !n.textOnly) {
+  if (!n.container && !n.textOnly && !n.imageOnly) {
     items.push('-');
     items.push({ label: 'Simulation', heading: true });
     if (computeOrigins().some((o) => o.id === n.id)) {

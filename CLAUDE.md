@@ -38,7 +38,7 @@ serialize-and-rasterize operation. Layers, back to front: `layer-containers`
 exports).
 
 - **`js/components.js`** — the palette catalog. `COMPONENTS` is a flat array
-  of `{id, category, label, icon, container?, textOnly?, w?, h?}`.
+  of `{id, category, label, icon, container?, textOnly?, imageOnly?, w?, h?}`.
   `CATEGORY_COLORS`/`CATEGORY_FILLS`/`CATEGORY_LABELS` key the 17 categories
   (Client, Edge, Network & Boundary, Services, Compute, Communication, Cache,
   Data, Processing, Reliability, Security, Observability, ML, GenAI, RAG,
@@ -46,7 +46,44 @@ exports).
   (Region, AZ, VPC, Subnet, Group) that render as large dashed background
   rects. `textOnly: true` marks the freeform "Text" tool (transparent body,
   word-wrapped, auto-grows height — see `recomputeTextOnlyHeight` in
-  `js/canvas.js`).
+  `js/canvas.js`). `imageOnly: true` marks the freeform "Image" tool —
+  see **Uploaded images** below.
+  - **Uploaded images**: two independent features, both storing the picked
+    file as a `data:` URL directly on the node (no server — same
+    no-backend approach as everything else, so it's just a JSON field that
+    rides along through undo/redo, autosave, and YAML export/import for
+    free; the tradeoff is a large upload noticeably inflates both).
+    `promptImageUpload(node, field)`/`onImageFileChosen` (canvas.js) are
+    the shared plumbing for both — they set `imageUploadTarget = {node,
+    field}`, then click the hidden `#image-upload-input` (index.html); its
+    `change` handler reads the chosen file via `FileReader`, guarded by
+    `MAX_IMAGE_BYTES` (a soft size cap, not a hard limit) and a
+    `file.type.startsWith('image/')` check.
+    1. **The "Image" node** (`node.imageOnly` + `node.imageSrc`) — a
+       freeform picture with no icon/label split, rendered by
+       `renderImageNode` as a `<clipPath>`-rounded `<image>` at
+       `preserveAspectRatio="xMidYMid meet"` (contain, never crops) over an
+       `.image-frame` that reuses the regular Box Color fields
+       (`fillColor`/`strokeColor`) as its letterbox backdrop/border.
+       Dropping the Image palette tool immediately opens the file picker
+       (`onCanvasDrop`); before a file is chosen (or after right-click →
+       Remove Image) it's a click-to-upload placeholder that drags as a
+       plain node (no border-connect — nothing to connect yet). Once an
+       image is set it behaves like a regular node: full border
+       drag-to-connect via `startDragOrConnect`, double-click to replace,
+       and a drag handle (`startResizeNode`, shared with container
+       resizing) since — unlike every other palette component — there's no
+       fixed "correct" size. `recomputeImageNodeSize` auto-fits the box's
+       height to the picked image's real aspect ratio exactly once, the
+       first time an image lands on a given node (`node.imageSizedOnce`),
+       so replacing an image later never yanks a box the user already
+       resized by hand back to a different aspect ratio.
+    2. **Custom Icon** (right-click a regular component → Icon → Custom
+       Icon…) — `node.customIcon` overrides the built-in `ICONS[n.icon]`
+       stroke-SVG glyph in `renderRegularNode`'s icon slot with an
+       `<image>` at the same position/size instead; everything else about
+       the node (box, label, category color) is unchanged. Reset to
+       Default Icon clears it.
 - **`js/canvas.js`** — owns `state` (`{nodes, edges, selected, multiIds}`) and
   all rendering/interaction: drag-drop from palette, node drag/resize/rename,
   edge creation via connector handles, the right-click context menu builders

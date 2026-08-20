@@ -44,6 +44,8 @@ const EXPORT_STYLE = `
   .node-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 12px; fill: #1e293b; text-anchor: middle; font-weight: 500; }
   .text-node-label { font-size: 16px; font-weight: 600; }
   .container-rect { stroke-width: 1.5; stroke-dasharray: 6 4; }
+  .image-frame { stroke-width: 2; }
+  .image-placeholder-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 500; fill: #64748b; text-anchor: middle; }
   .container-label { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 600; fill: #64748b; }
   .edge-path { fill: none; stroke: #64748b; stroke-width: 2; }
   .arrowhead-path { fill: #64748b; }
@@ -246,6 +248,8 @@ function diagramToYAMLObject() {
       if (n.textColor) obj.textColor = n.textColor;
       if (n.fillColor) obj.fillColor = n.fillColor;
       if (n.strokeColor) obj.strokeColor = n.strokeColor;
+      if (n.imageSrc) obj.imageSrc = n.imageSrc;
+      if (n.customIcon) obj.customIcon = n.customIcon;
       return obj;
     }),
     edges: state.edges.map((e) => {
@@ -312,6 +316,7 @@ function importYAMLFile(file) {
         icon: def.icon,
         container: !!def.container,
         textOnly: !!def.textOnly,
+        imageOnly: !!def.imageOnly,
         x: spec.x || 0,
         y: spec.y || 0,
         w,
@@ -324,6 +329,12 @@ function importYAMLFile(file) {
         textColor: typeof spec.textColor === 'string' ? spec.textColor : undefined,
         fillColor: typeof spec.fillColor === 'string' ? spec.fillColor : undefined,
         strokeColor: typeof spec.strokeColor === 'string' ? spec.strokeColor : undefined,
+        imageSrc: typeof spec.imageSrc === 'string' ? spec.imageSrc : undefined,
+        customIcon: typeof spec.customIcon === 'string' ? spec.customIcon : undefined,
+        // A saved w/h already reflects whatever size the user (or the
+        // auto-fit-once on first upload) settled on — importing must not
+        // re-trigger that auto-fit and silently resize the box.
+        imageSizedOnce: typeof spec.imageSrc === 'string',
       };
       idMap[spec.id] = nid;
       nodes.push(node);

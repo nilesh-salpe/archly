@@ -25,7 +25,7 @@ const PATTERN_FILES = [
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '18';
+const ASSET_VERSION = '19';
 
 let PATTERNS = [];
 
@@ -90,6 +90,7 @@ function loadPattern(id) {
       icon: def.icon,
       container: !!def.container,
       textOnly: !!def.textOnly,
+      imageOnly: !!def.imageOnly,
       x: spec.x,
       y: spec.y,
       w,
