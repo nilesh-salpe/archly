@@ -57,6 +57,23 @@ function buildPalette() {
         ev.dataTransfer.effectAllowed = 'copy';
       });
 
+      // Tap-to-place: native HTML5 drag-and-drop (dragstart above) never
+      // fires from a touch gesture on any mobile browser, so a plain click
+      // is the fallback that actually works there — click never fires
+      // after a completed drag, so this is additive and doesn't change
+      // anything about the desktop drag-and-drop path. Places the node at
+      // the current visible-viewport center, same as onCanvasDrop's
+      // addNode(componentId, x, y) call in canvas.js.
+      item.addEventListener('click', () => {
+        const wrapRect = canvasWrap.getBoundingClientRect();
+        const { x, y } = toSVGCoords(wrapRect.left + wrapRect.width / 2, wrapRect.top + wrapRect.height / 2);
+        const node = addNode(comp.id, x, y);
+        if (!node) return;
+        selectItem('node', node.id);
+        if (node.imageOnly) promptImageUpload(node, 'imageSrc');
+        if (isMobileLayout() && showPalette) togglePalette();
+      });
+
       list.appendChild(item);
       paletteEntries.push({ comp, itemEl: item, sectionEl: section });
     }
@@ -278,6 +295,89 @@ function clearDiagramWithConfirm() {
   clearDiagram();
 }
 
+// Matches the @media (max-width: 720px) breakpoint in styles.css that hides
+// Undo/Redo/Reset/Speed/View/Edit from the toolbar row — single source of
+// truth for the pixel value between the two.
+const MOBILE_BREAKPOINT_QUERY = '(max-width: 720px)';
+function isMobileLayout() {
+  return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches;
+}
+
+function buildViewMenuItems() {
+  const items = [
+    { label: (showGrid ? '✓ ' : '   ') + 'Grid Background', action: toggleGrid },
+    { label: (showRulers ? '✓ ' : '   ') + 'Rulers', action: toggleRulers },
+    '-',
+    { label: (showSimAnnotations ? '✓ ' : '   ') + 'Latency & Cost (simulated)', action: toggleSimAnnotations },
+  ];
+  if (hasSimFailures()) {
+    items.push({ label: `   Clear Failures (${simFailedNodeIds.size + simFailedEdgeIds.size})`, action: clearSimFailures });
+  }
+  return items;
+}
+
+// Edit ▾'s items are context-sensitive: exactly what right-clicking the
+// current selection would show (same buildNodeMenuItems/buildEdgeMenuItems
+// used by the canvas context menus), or just Paste if nothing's selected —
+// or null if there's truly nothing to offer (nothing selected, clipboard
+// empty), so callers can skip the entry entirely rather than show an empty
+// menu.
+function getEditMenuItemsForSelection(x, y) {
+  if (state.multiIds.size > 1) return buildMultiSelectMenuItems();
+  if (state.selected && state.selected.kind === 'node') {
+    const node = nodeById(state.selected.id);
+    if (node) return buildNodeMenuItems(node, x, y);
+  }
+  if (state.selected && state.selected.kind === 'edge') {
+    const edge = state.edges.find((e) => e.id === state.selected.id);
+    if (edge) return buildEdgeMenuItems(edge, x, y);
+  }
+  if (clipboardNodes && clipboardNodes.length) return [{ label: 'Paste', action: () => pasteNode() }];
+  return null;
+}
+
+function buildMoreMenuItems(x, y) {
+  const items = [];
+  // Below the mobile breakpoint these six lose their own toolbar buttons
+  // (styles.css hides them to keep the row down to Components/Patterns/
+  // Play/Pause/Results/More/position on a phone-width screen) — surface
+  // them here instead so nothing actually becomes unreachable.
+  if (isMobileLayout()) {
+    items.push(
+      { label: 'Undo    ⌘Z', action: undo },
+      { label: 'Redo    ⌘⇧Z', action: redo },
+      { label: 'Reset Flow Animation', action: resetFlow },
+      {
+        label: 'Speed',
+        submenu: [1600, 900, 450].map((ms) => ({
+          label: (playState.speedMs === ms ? '✓ ' : '   ') + { 1600: 'Slow', 900: 'Normal', 450: 'Fast' }[ms],
+          action: () => {
+            playState.speedMs = ms;
+            document.getElementById('speed-select').value = String(ms);
+          },
+        })),
+      },
+      { label: 'View', submenu: buildViewMenuItems() },
+      { label: 'Edit Selection', submenu: getEditMenuItemsForSelection(x, y) || [{ label: 'Nothing selected', heading: true }] },
+      '-'
+    );
+  }
+  items.push(
+    { label: 'Clear All', action: clearDiagramWithConfirm },
+    '-',
+    { label: 'Export', heading: true },
+    { label: '   PNG Image', action: exportPNGFile },
+    { label: '   SVG Image', action: exportSVGFile },
+    { label: '   Animated SVG (plays the flow)', action: exportAnimatedSVGFile },
+    { label: '   YAML', action: exportYAMLFile },
+    '-',
+    { label: 'Import YAML…', action: () => document.getElementById('import-yaml-input').click() },
+    '-',
+    { label: 'Help & Shortcuts', action: () => toggleHelpPanel() }
+  );
+  return items;
+}
+
 function wireToolbar() {
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
@@ -295,16 +395,7 @@ function wireToolbar() {
   document.getElementById('btn-view').addEventListener('click', (ev) => {
     ev.stopPropagation();
     const rect = ev.currentTarget.getBoundingClientRect();
-    const items = [
-      { label: (showGrid ? '✓ ' : '   ') + 'Grid Background', action: toggleGrid },
-      { label: (showRulers ? '✓ ' : '   ') + 'Rulers', action: toggleRulers },
-      '-',
-      { label: (showSimAnnotations ? '✓ ' : '   ') + 'Latency & Cost (simulated)', action: toggleSimAnnotations },
-    ];
-    if (hasSimFailures()) {
-      items.push({ label: `   Clear Failures (${simFailedNodeIds.size + simFailedEdgeIds.size})`, action: clearSimFailures });
-    }
-    showContextMenu(rect.left, rect.bottom + 4, items);
+    showContextMenu(rect.left, rect.bottom + 4, buildViewMenuItems());
   });
 
   document.getElementById('btn-play').addEventListener('click', playFlow);
@@ -315,49 +406,23 @@ function wireToolbar() {
     playState.speedMs = parseInt(ev.target.value, 10);
   });
 
-  // Edit ▾ is context-sensitive: it shows exactly what right-clicking the
-  // current selection would show (same buildNodeMenuItems/buildEdgeMenuItems
-  // used by the canvas context menus), or just Paste if nothing's selected.
   document.getElementById('btn-edit').addEventListener('click', (ev) => {
     ev.stopPropagation();
     const rect = ev.currentTarget.getBoundingClientRect();
     const x = rect.left;
     const y = rect.bottom + 4;
-    if (state.multiIds.size > 1) {
-      showContextMenu(x, y, buildMultiSelectMenuItems());
-      return;
-    }
-    if (state.selected && state.selected.kind === 'node') {
-      const node = nodeById(state.selected.id);
-      if (node) showContextMenu(x, y, buildNodeMenuItems(node, x, y));
-      return;
-    }
-    if (state.selected && state.selected.kind === 'edge') {
-      const edge = state.edges.find((e) => e.id === state.selected.id);
-      if (edge) showContextMenu(x, y, buildEdgeMenuItems(edge, x, y));
-      return;
-    }
-    if (clipboardNodes && clipboardNodes.length) showContextMenu(x, y, [{ label: 'Paste', action: () => pasteNode() }]);
+    const items = getEditMenuItemsForSelection(x, y);
+    if (items) showContextMenu(x, y, items);
   });
 
   // Kebab (⋮): everything infrequent — Clear All, Export/Import, Help —
-  // consolidated behind one icon instead of separate File▾/Clear All/? buttons.
+  // consolidated behind one icon instead of separate File▾/Clear All/?
+  // buttons. Below the mobile breakpoint it also picks up Undo/Redo/Reset/
+  // Speed/View/Edit — see buildMoreMenuItems().
   document.getElementById('btn-more').addEventListener('click', (ev) => {
     ev.stopPropagation();
     const rect = ev.currentTarget.getBoundingClientRect();
-    showContextMenu(rect.left, rect.bottom + 4, [
-      { label: 'Clear All', action: clearDiagramWithConfirm },
-      '-',
-      { label: 'Export', heading: true },
-      { label: '   PNG Image', action: exportPNGFile },
-      { label: '   SVG Image', action: exportSVGFile },
-      { label: '   Animated SVG (plays the flow)', action: exportAnimatedSVGFile },
-      { label: '   YAML', action: exportYAMLFile },
-      '-',
-      { label: 'Import YAML…', action: () => document.getElementById('import-yaml-input').click() },
-      '-',
-      { label: 'Help & Shortcuts', action: () => toggleHelpPanel() },
-    ]);
+    showContextMenu(rect.left, rect.bottom + 4, buildMoreMenuItems(rect.left, rect.bottom + 4));
   });
 
   const importInput = document.getElementById('import-yaml-input');

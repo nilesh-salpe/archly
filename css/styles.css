@@ -69,7 +69,6 @@ html, body {
   flex-wrap: nowrap;
   justify-content: center;
   max-width: calc(100vw - 24px);
-  overflow-x: auto;
   padding: 8px 10px;
   /* Transparent by design — no enclosing card. Each .btn already carries its
      own opaque surface/border/shadow, so the row reads as a cluster of
@@ -418,6 +417,11 @@ body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance
   position: absolute;
   inset: 0;
   overflow: auto;
+  /* Keeps native single-finger touch panning (both axes) but opts out of
+     the browser's own pinch-to-zoom, so our custom two-pointer pinch
+     handler (onCanvasPointerDown et al., canvas.js) owns that gesture
+     instead of fighting the whole page zooming at the same time. */
+  touch-action: pan-x pan-y;
   background-color: var(--canvas-bg);
   background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
   background-size: 22px 22px;
@@ -426,7 +430,15 @@ body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance
 .canvas-wrap.no-grid .canvas-scroll { background-image: none; }
 .canvas-wrap.rulers-on .canvas-scroll { top: 22px; left: 22px; }
 
-#canvas { display: block; }
+#canvas {
+  display: block;
+  /* Long-press opens our own context menu (onNodeContextMenu/
+     onEdgeContextMenu already call preventDefault() on 'contextmenu',
+     which touch browsers dispatch after a long press) — without this,
+     iOS's native text-selection callout can race it on a label/badge. */
+  -webkit-touch-callout: none;
+  user-select: none;
+}
 
 /* ---------- Empty-canvas onboarding placeholder ---------- */
 
@@ -1191,4 +1203,59 @@ body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
 .ruler-tick-line { position: absolute; background: var(--chrome-border); }
 .ruler-h .ruler-tick-line { top: 16px; width: 1px; height: 6px; }
 .ruler-v .ruler-tick-line { left: 16px; height: 1px; width: 6px; }
+
+/* ---------- Responsive / touch ---------- */
+
+/* Below this width, the toolbar drops Undo/Redo/Reset/Speed/View/Edit (see
+   .tb-mobile-hide/.tb-sep-mobile-hide above, and the matching breakpoint
+   value in MOBILE_BREAKPOINT_QUERY, js/app.js) — they're still reachable
+   through the More ▾ menu (buildMoreMenuItems(), js/app.js), which checks
+   the same breakpoint. What's left — Components, Patterns, Play/Pause,
+   Results, More, the position toggle — fits a 375px-wide screen in one row
+   with no wrap and no scrollbar. */
+@media (max-width: 720px) {
+  .tb-mobile-hide,
+  .tb-sep-mobile-hide {
+    display: none;
+  }
+
+  /* A fixed 250px/260px side dock eats most of a phone's width — span the
+     screen instead. Vertical clearance (top/bottom — already reserving
+     room for the toolbar/brand mark/zoom strip via --toolbar-clearance
+     etc., see canvas.js's syncToolbarClearance) and the existing slide
+     show/hide transforms are both expressed relative to the element's own
+     box, so neither needs to change here — only the horizontal span does. */
+  .palette,
+  .results-panel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+
+  .empty-state-card {
+    max-width: calc(100vw - 48px);
+    padding: 24px;
+  }
+}
+
+/* Touch targets sized for a mouse cursor (10px resize handle, 12px-wide
+   endpoint circle) are too small for a fingertip — bump them for any
+   coarse (touch) pointer regardless of viewport width, so a touchscreen
+   laptop with a mouse alongside it isn't affected. width/height/r are SVG
+   presentation attributes, which modern browsers let CSS override even
+   though canvas.js sets them inline as element attributes at render time.
+   The resize handle's x/y stay anchored at the node's original corner
+   inset (unaffected by this), so the larger box overhangs the corner
+   slightly rather than staying perfectly flush — a normal tradeoff for a
+   bigger grab target, and harmless since it's still a resize affordance,
+   not something requiring pixel-precise placement. */
+@media (pointer: coarse) {
+  .resize-handle {
+    width: 20px;
+    height: 20px;
+  }
+  .edge-endpoint-handle {
+    r: 12px;
+  }
+}
 

@@ -48,6 +48,8 @@ function initCanvas() {
   canvasWrap.addEventListener('pointerdown', onCanvasPointerDown);
   canvasWrap.addEventListener('click', onCanvasClick);
   canvasWrap.addEventListener('contextmenu', onCanvasContextMenu);
+  window.addEventListener('pointerup', onTouchPointerRelease);
+  window.addEventListener('pointercancel', onTouchPointerRelease);
   canvasScroll.addEventListener('scroll', updateRulers);
   canvasScroll.addEventListener('wheel', onCanvasWheel, { passive: false });
   window.addEventListener('resize', updateRulers);
@@ -570,6 +572,65 @@ function onCanvasWheel(ev) {
   if (!(ev.ctrlKey || ev.metaKey)) return; // plain scroll/trackpad pan is untouched
   ev.preventDefault();
   setZoom(zoomLevel + (ev.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP), { x: ev.clientX, y: ev.clientY });
+}
+
+// ---------- Touch pinch-to-zoom ----------
+// Two simultaneous touch pointers on the canvas are a pinch gesture, not
+// two independent single-finger drags — tracked separately from the
+// mouse/pen marquee-select flow (onCanvasPointerDown below), which only
+// ever sees one active pointer at a time. .canvas-scroll's
+// touch-action:pan-x pan-y (styles.css) opts out of the browser's own
+// pinch-zoom so this owns the gesture instead of fighting a whole-page zoom.
+const activeTouchPointers = new Map(); // pointerId -> {x, y}, touch pointers only
+let pinchCtx = null; // {startDist, startZoom} while a pinch is in progress
+
+function pinchMidpointClient() {
+  const pts = [...activeTouchPointers.values()];
+  return { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+}
+
+function pinchDistance() {
+  const pts = [...activeTouchPointers.values()];
+  return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+}
+
+// Called from onCanvasPointerDown for touch pointers only. Returns true
+// when a pinch just started (or is already in progress), so the caller
+// skips starting a marquee-select from what's actually the second finger.
+function onCanvasTouchPointerDown(ev) {
+  activeTouchPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (activeTouchPointers.size !== 2) return false;
+
+  // The first finger may have already started a marquee — a pinch
+  // supersedes it.
+  if (marqueeCtx) {
+    if (marqueeCtx.rectEl) marqueeCtx.rectEl.remove();
+    window.removeEventListener('pointermove', onMarqueeMove);
+    window.removeEventListener('pointerup', onMarqueeUp);
+    marqueeCtx = null;
+  }
+  pinchCtx = { startDist: pinchDistance(), startZoom: zoomLevel };
+  window.addEventListener('pointermove', onPinchMove);
+  return true;
+}
+
+function onPinchMove(ev) {
+  if (!activeTouchPointers.has(ev.pointerId)) return;
+  activeTouchPointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (!pinchCtx || activeTouchPointers.size < 2 || !pinchCtx.startDist) return;
+  setZoom(pinchCtx.startZoom * (pinchDistance() / pinchCtx.startDist), pinchMidpointClient());
+}
+
+// Persistent (added once in initCanvas, not paired start/stop like the
+// gesture-scoped listeners above) so activeTouchPointers stays accurate
+// for every touch release, not just ones that happened to be mid-pinch.
+function onTouchPointerRelease(ev) {
+  if (!activeTouchPointers.has(ev.pointerId)) return;
+  activeTouchPointers.delete(ev.pointerId);
+  if (activeTouchPointers.size < 2 && pinchCtx) {
+    pinchCtx = null;
+    window.removeEventListener('pointermove', onPinchMove);
+  }
 }
 
 // ---------- Rendering ----------
@@ -1664,6 +1725,9 @@ let marqueeCtx = null;
 let marqueeJustFinished = false;
 
 function onCanvasPointerDown(ev) {
+  // A second touch finger landing here is a pinch starting, not a second
+  // independent drag — skip the marquee-select flow below for it.
+  if (ev.pointerType === 'touch' && onCanvasTouchPointerDown(ev)) return;
   if (ev.button !== 0) return;
   const start = toSVGCoords(ev.clientX, ev.clientY);
   marqueeCtx = { startClient: { x: ev.clientX, y: ev.clientY }, start, additive: ev.shiftKey, moved: false, rectEl: null, lastRect: null };
