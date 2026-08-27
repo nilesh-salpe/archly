@@ -289,6 +289,17 @@ function toggleHelpPanel(ev) {
   helpPanelEl = panel;
 }
 
+// "New" — back to a blank canvas. Same underlying clearDiagram() as Clear All,
+// but surfaced as its own toolbar button (and on the empty-state card) because
+// starting over is a first-thing-you-reach-for action, not something to hunt
+// for under More ▾. Guarded the same way as pattern load / YAML import, so
+// it only prompts when there's actually something to discard.
+function newEmptyCanvas() {
+  if (state.nodes.length && !confirm('Start a new empty canvas? The current diagram will be discarded.')) return;
+  resetFlow();
+  clearDiagram();
+}
+
 function clearDiagramWithConfirm() {
   if (state.nodes.length && !confirm('Clear the entire diagram? This cannot be undone.')) return;
   resetFlow();
@@ -363,6 +374,7 @@ function buildMoreMenuItems(x, y) {
     );
   }
   items.push(
+    { label: 'New Empty Canvas', action: newEmptyCanvas },
     { label: 'Clear All', action: clearDiagramWithConfirm },
     '-',
     { label: 'Export', heading: true },
@@ -379,6 +391,8 @@ function buildMoreMenuItems(x, y) {
 }
 
 function wireToolbar() {
+  document.getElementById('btn-new').addEventListener('click', newEmptyCanvas);
+  document.getElementById('btn-empty-new').addEventListener('click', newEmptyCanvas);
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
 

@@ -475,6 +475,15 @@ body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance
   color: var(--text-muted);
 }
 
+/* The "start over" action, kept on its own row above the pattern shortcuts —
+   it's a different kind of choice (blank canvas vs. pre-built diagram), and
+   mirrors the New button in the toolbar. */
+.empty-state-actions {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 14px;
+}
+
 .empty-state-patterns {
   display: flex;
   flex-wrap: wrap;

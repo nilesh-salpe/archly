@@ -8,7 +8,7 @@
      and every js/*.js below) so returning visitors' browsers fetch the new files
      instead of serving stale cached ones. See js/patterns.js's ASSET_VERSION for
      the matching bump on the patterns/*.yaml fetches. -->
-<link rel="stylesheet" href="css/styles.css?v=29" />
+<link rel="stylesheet" href="css/styles.css?v=30" />
 </head>
 <body>
   <div class="app">
@@ -20,7 +20,10 @@
         <div id="empty-state" class="empty-state" style="display:none">
           <div class="empty-state-card">
             <p class="empty-state-title">Your canvas is empty</p>
-            <p class="empty-state-body">Click &#9776; to add a component, or start from a pattern:</p>
+            <p class="empty-state-body">Click &#9776; to add a component, start a blank canvas, or pick a pattern:</p>
+            <div class="empty-state-actions">
+              <button id="btn-empty-new" class="btn btn-accent">&#43; New Empty Canvas</button>
+            </div>
             <div class="empty-state-patterns" id="empty-state-patterns"></div>
           </div>
         </div>
@@ -56,6 +59,8 @@
            (hamburger / bento) instead of always-open drawers. Kept to a
            single non-wrapping row — see flex-wrap:nowrap on .toolbar-bar. -->
       <header class="toolbar-bar" id="toolbar-bar">
+        <button id="btn-new" class="btn btn-iconlabel" aria-label="New empty canvas"><span class="btn-icon-glyph">&#43;</span><span class="btn-label">New</span></button>
+        <span class="tb-sep"></span>
         <button id="btn-palette-toggle" class="btn btn-iconlabel" aria-label="Components"><span class="btn-icon-glyph">&#9776;</span><span class="btn-label">Components</span></button>
         <button id="btn-pattern" class="btn btn-iconlabel" aria-label="Patterns"><span class="btn-icon-glyph">&#9638;</span><span class="btn-label">Patterns</span></button>
 
@@ -117,14 +122,14 @@
     </div>
   </div>
 
-  <script src="js/components.js?v=29"></script>
-  <script src="js/yaml.js?v=29"></script>
-  <script src="js/canvas.js?v=29"></script>
-  <script src="js/arrows.js?v=29"></script>
-  <script src="js/animate.js?v=29"></script>
-  <script src="js/simulate.js?v=29"></script>
-  <script src="js/patterns.js?v=29"></script>
-  <script src="js/export.js?v=29"></script>
-  <script src="js/app.js?v=29"></script>
+  <script src="js/components.js?v=30"></script>
+  <script src="js/yaml.js?v=30"></script>
+  <script src="js/canvas.js?v=30"></script>
+  <script src="js/arrows.js?v=30"></script>
+  <script src="js/animate.js?v=30"></script>
+  <script src="js/simulate.js?v=30"></script>
+  <script src="js/patterns.js?v=30"></script>
+  <script src="js/export.js?v=30"></script>
+  <script src="js/app.js?v=30"></script>
 </body>
 </html>
