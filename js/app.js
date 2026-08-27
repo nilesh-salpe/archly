@@ -169,9 +169,43 @@ function hidePatternPanel() {
   }
 }
 
+// A blank stand-in thumbnail for the "Empty Canvas" entry — same box as a
+// real pattern thumbnail so the grid stays even, just nothing drawn in it.
+function buildEmptyCanvasThumbnail() {
+  const svgEl = document.createElementNS(SVG_NS, 'svg');
+  svgEl.setAttribute('viewBox', '0 0 100 60');
+  svgEl.setAttribute('class', 'pattern-thumb');
+  svgEl.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  const plus = document.createElementNS(SVG_NS, 'path');
+  plus.setAttribute('d', 'M50 22 V38 M42 30 H58');
+  plus.setAttribute('stroke', 'var(--text-muted)');
+  plus.setAttribute('stroke-width', 2);
+  plus.setAttribute('stroke-linecap', 'round');
+  plus.setAttribute('fill', 'none');
+  svgEl.appendChild(plus);
+  return svgEl;
+}
+
 function buildPatternPanel() {
   const panel = document.createElement('div');
   panel.className = 'pattern-panel';
+
+  // "Start from nothing" belongs in the same list as "start from a pattern" —
+  // it's the same decision, so it's the first choice here as well as its own
+  // toolbar button.
+  const emptyRow = document.createElement('div');
+  emptyRow.className = 'pattern-panel-item';
+  emptyRow.appendChild(buildEmptyCanvasThumbnail());
+  const emptyLabel = document.createElement('span');
+  emptyLabel.textContent = 'Empty Canvas';
+  emptyRow.appendChild(emptyLabel);
+  emptyRow.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    hidePatternPanel();
+    newEmptyCanvas();
+  });
+  panel.appendChild(emptyRow);
+
   for (const p of PATTERNS) {
     const row = document.createElement('div');
     row.className = 'pattern-panel-item';
@@ -298,6 +332,7 @@ function newEmptyCanvas() {
   if (state.nodes.length && !confirm('Start a new empty canvas? The current diagram will be discarded.')) return;
   resetFlow();
   clearDiagram();
+  dismissEmptyState(); // asked for a blank sheet — don't hand back the onboarding card
 }
 
 function clearDiagramWithConfirm() {

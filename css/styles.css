@@ -212,14 +212,14 @@ body[data-toolbar-pos='bottom'] .toolbar-bar { bottom: 12px; top: auto; }
 }
 
 /* Every top-toolbar control is icon-only (keeps the single-row toolbar
-   compact) and reveals its name as a custom tooltip-style label only while
-   Alt/Option is held (body.alt-held, toggled by a global keydown/keyup
-   listener — see initCanvas in canvas.js) — not on casual hover, so
-   glancing across the row never pops up a flurry of labels. Kept on
-   keyboard :focus-visible too, as a distinct deliberate interaction, for
-   users tabbing through the toolbar without a mouse. See aria-label (not
-   title, to avoid a second native tooltip stacking on top of this one) on
-   these buttons in index.html. */
+   compact) and reveals its name as a custom tooltip-style label on hover,
+   while Alt/Option is held (body.alt-held, toggled by a global keydown/keyup
+   listener — see initCanvas in canvas.js), or on keyboard :focus-visible for
+   users tabbing through the toolbar without a mouse. Hover gets a delay (see
+   transition-delay below) so merely sweeping the pointer across the row
+   doesn't pop up a flurry of labels — Alt and focus stay instant, since both
+   are deliberate. See aria-label (not title, to avoid a second native tooltip
+   stacking on top of this one) on these buttons in index.html. */
 .btn-iconlabel {
   position: relative;
   width: 30px;
@@ -270,6 +270,18 @@ body[data-toolbar-pos='bottom'] .tb-group .btn-label {
 body.alt-held .btn-iconlabel .btn-label,
 body.alt-held .tb-group .btn-label {
   opacity: 1;
+}
+
+/* Hover only — a short delay before it fades in, so passing over the row on
+   the way somewhere else stays quiet. Hover is unreliable on touch (it can
+   stick after a tap), so this is pointer-gated; touch users still get the
+   labels via the same buttons' aria-labels in a screen reader. */
+@media (hover: hover) and (pointer: fine) {
+  .btn-iconlabel:hover .btn-label,
+  .tb-group:hover .btn-label {
+    opacity: 1;
+    transition-delay: 0.4s;
+  }
 }
 
 /* ---------- Body layout ----------

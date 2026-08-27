@@ -221,6 +221,17 @@ function nodeById(id) {
   return state.nodes.find((n) => n.id === id);
 }
 
+// Set by dismissEmptyState() (the "New Empty Canvas" actions); cleared in
+// renderAll() as soon as the canvas has nodes again. Deliberately not part of
+// `state` or the view prefs — it's a one-shot, per-session dismissal, nothing
+// to persist or undo.
+let emptyStateDismissed = false;
+
+function dismissEmptyState() {
+  emptyStateDismissed = true;
+  renderAll();
+}
+
 function clearDiagram() {
   resetFlow();
   state.nodes = [];
@@ -652,8 +663,15 @@ function renderAll() {
     layerNodes.appendChild(n.imageOnly ? renderImageNode(n) : renderRegularNode(n));
   }
 
+  // The empty-canvas card is onboarding, not a modal — "New Empty Canvas"
+  // means "give me a blank sheet", so it dismisses the card instead of
+  // leaving it sitting over the blank canvas forever. Re-arms itself the
+  // moment the canvas has content again, so the next time it empties out
+  // (delete-all, Clear All) the hint is back.
   const emptyState = document.getElementById('empty-state');
-  if (emptyState) emptyState.style.display = state.nodes.length === 0 ? 'flex' : 'none';
+  if (state.nodes.length) emptyStateDismissed = false;
+  const showEmptyState = state.nodes.length === 0 && !emptyStateDismissed;
+  if (emptyState) emptyState.style.display = showEmptyState ? 'flex' : 'none';
 
   renderSimAnnotations();
   renderSimFailures();
