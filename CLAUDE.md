@@ -115,9 +115,17 @@ exports).
   - **Resizing**: every node kind is drag-resizable from an eight-handle
     frame (four corners + four side midpoints — `RESIZE_DIRS`/
     `appendResizeHandles`), rendered only while the node is the *single*
-    selection. That gating isn't cosmetic: handles necessarily sit inside
-    `CONNECT_BORDER_ZONE`, so keeping them off unselected nodes leaves the
-    whole border free for drawing connections. `startResizeNode(ev, node,
+    selection. Handles are pushed *outward* along each side's normal
+    (`resizeHandleOffset`), not centered on the outline — the border is also
+    the connect surface (`CONNECT_BORDER_ZONE`, a 10px band inside the edge),
+    and handles straddling the edge covered most of that band: on a stock
+    150×70 node roughly 60% of the left and right edges, so nearly every
+    attempt to drag out a flow arrow grabbed a resize handle instead. With
+    the offset, the whole band is connect-first and the handles live in the
+    halo just outside it (selection-gating keeps unselected nodes clear
+    either way). If you change `RESIZE_HIT_SIZE`, re-check that: sample
+    points a few px inside the border and confirm they still hit
+    `.node-body`, not `.resize-hit`. `startResizeNode(ev, node,
     dir)` records the box as it was at pointerdown and recomputes from that
     origin every step (never incrementally, so snapping can't drift); `dir`
     decides which edges move, so a side handle changes one dimension only.

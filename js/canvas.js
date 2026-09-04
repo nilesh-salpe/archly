@@ -1982,24 +1982,36 @@ function onCanvasClick() {
 // you interact with a node you haven't selected yet.
 
 const RESIZE_HANDLE_SIZE = 8;
-const RESIZE_HIT_SIZE = 14;
+const RESIZE_HIT_SIZE = 12;
 // A fingertip needs a bigger target, but eight of them on a 150×70 node would
 // blanket the border (which is also the connect surface) — so touch gets the
 // four corners only, at a size worth tapping.
 const RESIZE_HANDLE_SIZE_TOUCH = 12;
-const RESIZE_HIT_SIZE_TOUCH = 26;
+const RESIZE_HIT_SIZE_TOUCH = 22;
+
+// Handles sit *outside* the node's outline, not centered on it. The border is
+// the connect surface (CONNECT_BORDER_ZONE, a 10px band inside the edge), and
+// handles centered on the edge covered most of that band on a normal-sized
+// node — every attempt to drag out a flow arrow grabbed a resize handle
+// instead. Offsetting them outward by (hit size / 2 - 2) leaves all but 2px
+// of the connect band clear, and puts the visible square flush against the
+// outline rather than straddling it.
+function resizeHandleOffset(hitSize) {
+  return hitSize / 2 - 2;
+}
 
 // fx/fy are fractions of the node box, so the same table places handles on
-// any size. `cursor` keys the .resize-cur-* CSS classes.
+// any size; nx/ny is the outward normal the handle is pushed along.
+// `cursor` keys the .resize-cur-* CSS classes.
 const RESIZE_DIRS = [
-  { dir: 'nw', fx: 0, fy: 0, cursor: 'nwse' },
-  { dir: 'n', fx: 0.5, fy: 0, cursor: 'ns' },
-  { dir: 'ne', fx: 1, fy: 0, cursor: 'nesw' },
-  { dir: 'e', fx: 1, fy: 0.5, cursor: 'ew' },
-  { dir: 'se', fx: 1, fy: 1, cursor: 'nwse' },
-  { dir: 's', fx: 0.5, fy: 1, cursor: 'ns' },
-  { dir: 'sw', fx: 0, fy: 1, cursor: 'nesw' },
-  { dir: 'w', fx: 0, fy: 0.5, cursor: 'ew' },
+  { dir: 'nw', fx: 0, fy: 0, nx: -1, ny: -1, cursor: 'nwse' },
+  { dir: 'n', fx: 0.5, fy: 0, nx: 0, ny: -1, cursor: 'ns' },
+  { dir: 'ne', fx: 1, fy: 0, nx: 1, ny: -1, cursor: 'nesw' },
+  { dir: 'e', fx: 1, fy: 0.5, nx: 1, ny: 0, cursor: 'ew' },
+  { dir: 'se', fx: 1, fy: 1, nx: 1, ny: 1, cursor: 'nwse' },
+  { dir: 's', fx: 0.5, fy: 1, nx: 0, ny: 1, cursor: 'ns' },
+  { dir: 'sw', fx: 0, fy: 1, nx: -1, ny: 1, cursor: 'nesw' },
+  { dir: 'w', fx: 0, fy: 0.5, nx: -1, ny: 0, cursor: 'ew' },
 ];
 
 function isCoarsePointer() {
@@ -2023,10 +2035,11 @@ function appendResizeHandles(g, n) {
   const coarse = isCoarsePointer();
   const size = coarse ? RESIZE_HANDLE_SIZE_TOUCH : RESIZE_HANDLE_SIZE;
   const hit = coarse ? RESIZE_HIT_SIZE_TOUCH : RESIZE_HIT_SIZE;
+  const off = resizeHandleOffset(hit);
   for (const spec of RESIZE_DIRS) {
     if (coarse && spec.dir.length === 1) continue;
-    const cx = n.w * spec.fx;
-    const cy = n.h * spec.fy;
+    const cx = n.w * spec.fx + spec.nx * off;
+    const cy = n.h * spec.fy + spec.ny * off;
     const group = el('g', { class: `resize-handle-group no-export resize-cur-${spec.cursor}` });
     group.appendChild(el('rect', {
       class: 'resize-handle',
