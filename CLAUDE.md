@@ -391,6 +391,11 @@ exports).
 
 - Node label: click the label text to rename inline (single-line `<input>`,
   or a `<textarea>` for the textOnly "Text" tool). Body/icon drag to move.
+  Text-first nodes (Text/Note/Paragraph) are the exception: their rename hit
+  box is nearly the whole node, so the first click only *selects* — the
+  editor opens on a second click (or the second half of a double-click).
+  Without that, the editor's textarea covered the box the moment you clicked
+  it and there was no way to grab a resize handle.
 - **Free-point connections**: a node's whole border is a connector, not just
   fixed dots — `CONNECT_BORDER_ZONE` (canvas.js) decides "near enough to the
   edge to start a connection" vs "interior, so move the node" in

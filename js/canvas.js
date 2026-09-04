@@ -1079,6 +1079,20 @@ function renderRegularNode(n) {
   body.addEventListener('pointerleave', () => { body.style.cursor = ''; });
   labelHit.addEventListener('click', (ev) => {
     ev.stopPropagation();
+    // A text-first node's rename target is nearly its whole box, so opening
+    // the editor on the very first click left no way to grab a resize handle:
+    // the textarea covers the box, and the click that would grab a handle is
+    // spent blurring the editor instead. Click selects, a second click (the
+    // second half of a double-click included) edits — the way a text box
+    // behaves in any diagramming tool. Regular components keep opening the
+    // editor on the first click, since their hit box is just the label band
+    // and clicking the body already selects them.
+    const isSoleSelection = state.selected && state.selected.kind === 'node' && state.selected.id === n.id;
+    if (n.textOnly && !isSoleSelection) {
+      if (ev.shiftKey) toggleMultiSelect(n.id);
+      else selectItem('node', n.id);
+      return;
+    }
     openRename(n);
   });
   g.addEventListener('click', (ev) => onNodeClick(ev, n));
@@ -1213,7 +1227,14 @@ function openLabelEditor(node, labelEl) {
         commit();
       }
     }
-    if (ev.key === 'Escape') cancel();
+    // Cancelling an edit shouldn't also drop the selection: the editor is
+    // gone by the time the global Escape handler runs, so its
+    // "activeElement is an input, ignore" guard no longer applies and it
+    // would clear the selection (taking the node's resize handles with it).
+    if (ev.key === 'Escape') {
+      ev.stopPropagation();
+      cancel();
+    }
   });
   input.addEventListener('blur', commit);
 }
@@ -1249,7 +1270,10 @@ function openProtocolEditor(edge, clientX, clientY) {
 
   input.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') commit();
-    if (ev.key === 'Escape') cancel();
+    if (ev.key === 'Escape') {
+      ev.stopPropagation(); // keep the selection — see openLabelEditor
+      cancel();
+    }
   });
   input.addEventListener('blur', commit);
 }
@@ -1290,7 +1314,10 @@ function openNodeSimEditor(node, field, clientX, clientY, currentValue) {
 
   input.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') commit();
-    if (ev.key === 'Escape') cancel();
+    if (ev.key === 'Escape') {
+      ev.stopPropagation(); // keep the selection — see openLabelEditor
+      cancel();
+    }
   });
   input.addEventListener('blur', commit);
 }
@@ -1722,7 +1749,10 @@ function openBadgeEditor(edge, badgeGroup) {
 
   input.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') commit();
-    if (ev.key === 'Escape') cancel();
+    if (ev.key === 'Escape') {
+      ev.stopPropagation(); // keep the selection — see openLabelEditor
+      cancel();
+    }
   });
   input.addEventListener('blur', commit);
 }
