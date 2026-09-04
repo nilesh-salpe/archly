@@ -2708,19 +2708,50 @@ function sendToBack(nodeId) {
 // ---------- Copy / paste ----------
 // clipboardNodes holds one or more node snapshots (ids stripped) so a
 // multi-selection copies/duplicates as a group, preserving relative layout.
+// clipboardEdges holds the arrows *between* those nodes, addressed by their
+// position in clipboardNodes rather than by node id — the pasted nodes get
+// fresh ids, so an index is the only reference that survives the round trip.
 
 let clipboardNodes = null;
+let clipboardEdges = null;
+
+// Edges carry nested objects (waypoints, label offset, endpoint anchors);
+// a spread alone would leave the copy sharing them with the original, so
+// pasting and then dragging a bend would move the source edge's bend too.
+function cloneEdgeData(e) {
+  const c = { ...e };
+  if (Array.isArray(e.waypoints)) c.waypoints = e.waypoints.map((p) => ({ ...p }));
+  if (e.labelOffset) c.labelOffset = { ...e.labelOffset };
+  if (e.fromAnchor) c.fromAnchor = { ...e.fromAnchor };
+  if (e.toAnchor) c.toAnchor = { ...e.toAnchor };
+  return c;
+}
 
 function copySelectedNode() {
   const ids = state.multiIds.size > 0
     ? [...state.multiIds]
     : state.selected && state.selected.kind === 'node' ? [state.selected.id] : [];
   if (!ids.length) return;
-  clipboardNodes = ids.map((id) => {
+  const indexById = new Map();
+  clipboardNodes = ids.map((id, i) => {
+    indexById.set(id, i);
     const c = { ...nodeById(id) };
     delete c.id;
     return c;
   });
+  // Only edges with *both* ends in the selection: an arrow to a node that
+  // wasn't copied has nothing to land on in the paste.
+  clipboardEdges = state.edges
+    .filter((e) => indexById.has(e.from) && indexById.has(e.to))
+    .map((e) => {
+      const c = cloneEdgeData(e);
+      c.fromIndex = indexById.get(e.from);
+      c.toIndex = indexById.get(e.to);
+      delete c.id;
+      delete c.from;
+      delete c.to;
+      return c;
+    });
   updateToolbarState();
 }
 
@@ -2738,6 +2769,28 @@ function pasteNode(pos) {
     const node = { ...c, id: state.nextNodeId++, x: anchorX + (c.x - minX), y: anchorY + (c.y - minY) };
     state.nodes.push(node);
     newIds.push(node.id);
+  }
+
+  // The arrows between them come along, re-pointed at the new node ids.
+  // Step numbers are kept as-is: a copy of a flow is the same flow, and
+  // renumbering it would quietly change what the diagram says.
+  const dx = anchorX - minX;
+  const dy = anchorY - minY;
+  for (const c of clipboardEdges || []) {
+    const edge = cloneEdgeData(c);
+    edge.id = state.nextEdgeId++;
+    edge.from = newIds[c.fromIndex];
+    edge.to = newIds[c.toIndex];
+    delete edge.fromIndex;
+    delete edge.toIndex;
+    // Waypoints are absolute canvas coordinates (anchors and curve/elbow
+    // offsets are relative, so they need no adjustment), so they have to
+    // move with the copy or the pasted arrows would loop back to where the
+    // originals are.
+    if (Array.isArray(edge.waypoints)) {
+      edge.waypoints = edge.waypoints.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+    }
+    state.edges.push(edge);
   }
 
   if (newIds.length === 1) {

@@ -96,7 +96,12 @@ exports).
   edge creation via connector handles, the right-click context menu builders
   (`buildNodeMenuItems`/`buildEdgeMenuItems`/`buildMultiSelectMenuItems` —
   also reused by the toolbar's "Edit ▾" dropdown so both stay in sync),
-  copy/paste (single or multi-node, via `clipboardNodes`), layering
+  copy/paste (single or multi-node, via `clipboardNodes` +
+  `clipboardEdges` — the arrows whose *both* ends are in the selection ride
+  along, addressed by index into `clipboardNodes` since the pasted nodes get
+  fresh ids; `cloneEdgeData` deep-copies their nested waypoints/anchors/label
+  offset, and paste shifts the waypoints, which are absolute coordinates,
+  by the same delta as the nodes), layering
   (bring-to-front/send-to-back via array order, plus `*Silent` variants for
   bulk multi-select ops — SVG paints in document order), view prefs
   (grid/rulers/palette-drawer, persisted to `localStorage`), and the diagram
