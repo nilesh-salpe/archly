@@ -25,7 +25,7 @@ const PATTERN_FILES = [
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '36';
+const ASSET_VERSION = '37';
 
 let PATTERNS = [];
 
@@ -132,6 +132,7 @@ function loadPattern(id) {
     arrowStyle: e.arrowStyle || 'end',
     curve: typeof e.curve === 'number' ? e.curve : undefined,
     routing: e.routing === 'orthogonal' ? 'orthogonal' : undefined,
+    rounded: e.rounded === true ? true : undefined,
     fromAnchor: e.fromAnchor || undefined,
     toAnchor: e.toAnchor || undefined,
     elbowOffset: typeof e.elbowOffset === 'number' ? e.elbowOffset : undefined,

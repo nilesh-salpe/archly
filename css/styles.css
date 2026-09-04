@@ -676,6 +676,28 @@ body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance
 }
 .edge-endpoint-handle:hover { fill: var(--accent); }
 
+/* A real bend point on the selected edge: drag to move, double-click to
+   remove. Solid ring, same visual family as the endpoint handles. */
+.edge-waypoint-handle {
+  fill: var(--input-bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+  cursor: move;
+}
+.edge-waypoint-handle:hover { fill: var(--accent); }
+
+/* The "virtual" handle at each drawn segment's midpoint — not a bend point
+   yet; dragging one creates one there. Deliberately faint so a selected edge
+   doesn't read as covered in dots, and solid on hover so it's obvious which
+   one is about to be grabbed. */
+.edge-virtual-handle {
+  fill: var(--accent);
+  stroke: none;
+  opacity: 0.3;
+  cursor: copy;
+}
+.edge-virtual-handle:hover { opacity: 0.95; }
+
 .edge-badge circle {
   fill: var(--input-bg);
   stroke: #64748b;
@@ -1284,6 +1306,13 @@ body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
 @media (pointer: coarse) {
   .edge-endpoint-handle {
     r: 12px;
+  }
+  .edge-waypoint-handle {
+    r: 11px;
+  }
+  .edge-virtual-handle {
+    r: 9px;
+    opacity: 0.45;
   }
 }
 

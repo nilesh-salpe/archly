@@ -265,6 +265,7 @@ function diagramToYAMLObject() {
       if (e.protocol) obj.protocol = e.protocol;
       if (typeof e.curve === 'number' && e.curve !== 0) obj.curve = Math.round(e.curve);
       if (e.routing === 'orthogonal') obj.routing = 'orthogonal';
+      if (e.rounded) obj.rounded = true;
       if (e.fromAnchor) obj.fromAnchor = e.fromAnchor;
       if (e.toAnchor) obj.toAnchor = e.toAnchor;
       if (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) obj.elbowOffset = Math.round(e.elbowOffset);
@@ -363,6 +364,7 @@ function importYAMLFile(file) {
         protocol: e.protocol || null,
         curve: typeof e.curve === 'number' ? e.curve : undefined,
         routing: e.routing === 'orthogonal' ? 'orthogonal' : undefined,
+        rounded: e.rounded === true ? true : undefined,
         fromAnchor: e.fromAnchor || undefined,
         toAnchor: e.toAnchor || undefined,
         elbowOffset: typeof e.elbowOffset === 'number' ? e.elbowOffset : undefined,

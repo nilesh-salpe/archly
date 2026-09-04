@@ -230,14 +230,26 @@ exports).
     drop point instead of creating a new edge. The *other* end's node is
     excluded as a drop target so you can't collapse an edge onto itself;
     dropping on empty space or an invalid target leaves the edge unchanged.
-  - **Curved routing** (`edge.routing` unset): exactly **one** bend point —
-    `edge.curve`, a signed perpendicular offset from the straight-line
-    midpoint. Dragging the line sets it (`computeBendFromPoint`);
-    double-click removes it. Parallel same-pair edges auto-separate when
-    `edge.curve` isn't set. (An earlier version generalized this to an
-    ordered `edge.curvePoints` array so a curve could take unlimited bends —
-    reverted: every drag added another point, which doesn't match how
-    draw.io/Visio/Lucidchart behave and made diagrams unpredictable fast.)
+  - **Direct routing** (`edge.routing` unset): with no explicit bends it's a
+    straight line, or a single quadratic arc when `edge.curve` (a signed
+    perpendicular offset from the straight-line midpoint) is set by dragging
+    the line (`computeBendFromPoint`); double-click removes it. Parallel
+    same-pair edges auto-separate when `edge.curve` isn't set. Beyond that it
+    takes the same ordered `edge.waypoints` list the orthogonal mode uses
+    (`computeDirectWaypointed`) and runs start → every waypoint → end as a
+    polyline; unanchored ends then aim at the nearest waypoint rather than at
+    the other node's center. `edge.curve` and a waypoint list say the same
+    thing two ways, so adding the first waypoint clears the arc.
+    (Unlimited bends were tried once before and reverted, because back then
+    *every drag* added one. What makes them workable now is that adding a
+    bend is its own gesture — a virtual handle or a double-click — while a
+    drag still only moves what's already there.)
+  - **Rounded corners** (`edge.rounded`, right-click → Routing): draw.io's
+    `rounded=1`. `pathFromPoints` is the single `d`-string builder for every
+    route, so this applies to orthogonal elbows and direct multi-bend
+    polylines alike — each interior corner is cut back along both of its
+    segments (never more than half of either, or two corners on a short
+    segment would overlap and fold the path) and bridged with a quadratic.
   - **Orthogonal routing** (`edge.routing === 'orthogonal'`) has two modes:
     - **Default** (no `edge.waypoints`): the classic auto two-corner "Z" (or
       straight/"L" when rows or columns already align) — `computeOrthogonalDefault`,
@@ -413,17 +425,33 @@ exports).
   spot (see arrows.js). Containers and text-only nodes are excluded (no
   border-drag source) — connecting *to* a container/text node still works,
   it just doesn't get a fixed anchor, matching the pre-anchor dynamic default.
-- Edge: `startEdgeBend` (canvas.js) dispatches by edge type/mode to one of
-  three drag handlers — curve (`startCurveDrag`, moves the one bend point),
-  default orthogonal (`startElbowDrag`, slides the Z's middle segment), or
-  waypointed orthogonal (`startWaypointDrag`, moves an existing waypoint
-  only — never adds one). `onEdgeDoubleClick` is the only way to add a
-  waypoint beyond an orthogonal edge's default pair, or to remove a curve's
-  bend or an existing waypoint. A plain click (no movement) selects the
-  edge; right-click for the full menu (line style, routing, arrowhead,
-  animate flow, thickness/color, protocol label, label style, "Straighten"
-  to clear all bend points, delete). The numbered badge itself is
-  click-to-edit-number only, unrelated to bending.
+- Edge: dragging the line body (`startEdgeBend`, canvas.js) dispatches by
+  mode to one of three handlers — waypointed, either routing
+  (`startWaypointDragFromLine`, moves the nearest existing bend), default
+  orthogonal (`startElbowDrag`, slides the Z's corners), or plain direct
+  (`startCurveDrag`, sets the single arc). All three only ever *move* a bend.
+  A plain click (no movement) selects the edge; right-click for the full menu
+  (line style, routing, rounded corners, arrowhead, animate flow,
+  thickness/color, protocol label, label style, "Straighten" to clear every
+  bend point, delete). The numbered badge itself is click-to-edit-number only,
+  unrelated to bending.
+  - **Handles on the selected edge** (`appendEdgeHandles`) are how bends are
+    added and removed, mirroring draw.io: an endpoint handle at each end
+    (retarget the edge), a solid `.edge-waypoint-handle` on every real bend
+    (drag to move, double-click to remove), and a faint
+    `.edge-virtual-handle` at each position the geometry reports in
+    `geo.virtuals` — dragging one inserts a real bend there and drags it from
+    the first pixel (`startNewWaypointDrag`). A virtual handle that's only
+    *clicked* takes its speculative point back out, so a stray click never
+    leaves a bend behind. `geo.virtuals` comes from arrows.js rather than
+    being computed here because it's shape-dependent: segment midpoints for a
+    polyline, but points at t=0.25/0.75 on a direct edge — the midpoint is
+    where the step-number badge sits, and the badge paints after the handles
+    and would swallow the pointerdown. All the handles are `no-export`.
+  - `onEdgeDoubleClick` does the same add/remove on the line itself, in both
+    routing modes: on an existing bend it removes it, otherwise it adds one
+    there (a direct edge's single arc is cleared first, since that's the only
+    way to clear it — it has no handle of its own).
   - **Animate Flow**: `edge.animated` (bool, right-click → Arrowhead →
     Animate Flow) is a persistent marching-dash effect — pure CSS
     (`.edge-path.edge-animated` + `@keyframes edge-flow` in styles.css,

@@ -4,21 +4,26 @@
 // border point instead of the dynamic "closest point to the other node's
 // center" default.
 //
-// Curves get exactly one bend point (`edge.curve`, a signed perpendicular
-// offset from the straight-line midpoint) — draw.io-style: drag anywhere on
-// the line to set it, no more. Orthogonal edges default to the classic
-// two-corner "Z" (or straight/"L" when rows or columns already align), with
-// each corner independently adjustable (`edge.elbowOffset` near the start,
-// `edge.elbowOffsetEnd` near the end) — dragging near either corner *moves*
-// that corner only; when they diverge, one extra connecting jog keeps the
-// route orthogonal. Dragging never creates a brand-new bend beyond that
-// pair. An explicit, deliberate action (double-click — see canvas.js) can
-// add real extra bend points (`edge.waypoints`) beyond that pair for edges
-// that genuinely need to route around something; once any exist, the route
-// passes through all of them in order instead of using the default Z.
-// (An earlier version let every drag add a new curve/waypoint; useful in
-// isolation, but a diagram builds up bends fast and unpredictably compared
-// to how draw.io/Visio/Lucidchart behave, so it's gone.)
+// Bend points, in both routing modes:
+//
+// A direct edge with no explicit bends is a straight line, or a single
+// quadratic arc when `edge.curve` (a signed perpendicular offset from the
+// midpoint) is set by dragging the line. An orthogonal one defaults to the
+// classic two-corner "Z" (or straight/"L" when rows or columns already
+// align), each corner independently adjustable — `edge.elbowOffset` near the
+// start, `edge.elbowOffsetEnd` near the end — so dragging near a corner
+// *moves* that corner only; when the two diverge, an extra connecting jog
+// keeps the route orthogonal.
+//
+// Beyond that, either mode can carry an ordered `edge.waypoints` list and the
+// route passes through all of them in order. Adding one is always a
+// deliberate gesture — drag a virtual handle, or double-click the line (see
+// canvas.js) — never a side effect of dragging, which only ever *moves* what
+// is already there. That distinction is the whole design: an early version
+// added a bend on every drag, and diagrams accumulated them unpredictably,
+// unlike draw.io/Visio/Lucidchart.
+//
+// `edge.rounded` softens every corner of whichever route results.
 
 function clipPointOnRect(cx, cy, tx, ty, rect) {
   const hw = rect.w / 2;
@@ -209,6 +214,89 @@ function computeOrthogonalPoints(edge, allNodes) {
   return waypoints.length ? computeOrthogonalWaypointed(edge, s, t, waypoints) : computeOrthogonalDefault(edge, s, t);
 }
 
+// ---------- Path building ----------
+
+// Every route — orthogonal or direct — ends up as an ordered point list, so
+// one builder turns any of them into a `d` string. `rounded` (edge.rounded,
+// right-click → Routing → Rounded Corners) is draw.io's `rounded=1`: each
+// interior corner is cut back along both of its segments and bridged with a
+// quadratic, which reads as a soft elbow on an orthogonal route and as a
+// smoothed bend on a direct multi-point one.
+const CORNER_RADIUS = 10;
+
+function pointTowards(from, to, dist) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const t = Math.min(1, dist / len);
+  return { x: from.x + dx * t, y: from.y + dy * t };
+}
+
+function pathFromPoints(points, rounded) {
+  if (points.length < 3 || !rounded) {
+    return `M ${points.map((p) => `${p.x} ${p.y}`).join(' L ')}`;
+  }
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1], cur = points[i], next = points[i + 1];
+    // Never cut back more than half of either neighbouring segment, or two
+    // corners on a short segment would overlap and the path would fold.
+    const r = Math.min(
+      CORNER_RADIUS,
+      Math.hypot(cur.x - prev.x, cur.y - prev.y) / 2,
+      Math.hypot(next.x - cur.x, next.y - cur.y) / 2
+    );
+    const a = pointTowards(cur, prev, r);
+    const b = pointTowards(cur, next, r);
+    d += ` L ${a.x} ${a.y} Q ${cur.x} ${cur.y} ${b.x} ${b.y}`;
+  }
+  const last = points[points.length - 1];
+  return `${d} L ${last.x} ${last.y}`;
+}
+
+// Candidate positions for canvas.js's "virtual" handles — the faint dots a
+// drag turns into a real bend point. Every route reports its own, because
+// where they belong depends on the shape: a polyline puts one at each
+// segment's midpoint, while a quadratic arc's midpoint isn't on any segment
+// at all (see the curved branch of computeEdgeGeometry). Segments too short
+// to hold a legible dot are skipped rather than crowding the line.
+const VIRTUAL_HANDLE_MIN_SEG = 26;
+
+function segmentMidpoints(points) {
+  const out = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1];
+    if (Math.hypot(b.x - a.x, b.y - a.y) < VIRTUAL_HANDLE_MIN_SEG) continue;
+    out.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  }
+  return out;
+}
+
+// ---------- Direct routing with explicit waypoints ----------
+// The same `edge.waypoints` list the orthogonal mode uses, applied to a
+// direct (non-right-angled) route: the line runs start → every waypoint →
+// end as a plain polyline. Unanchored ends aim at the nearest waypoint
+// rather than at the other node's center, so the first/last hop leaves the
+// box pointing the way the route actually goes.
+function computeDirectWaypointed(edge, allNodes, waypoints) {
+  const nodesById = {};
+  for (const n of allNodes) nodesById[n.id] = n;
+  const s = nodesById[edge.from];
+  const t = nodesById[edge.to];
+  if (!s || !t) return null;
+
+  const first = waypoints[0];
+  const last = waypoints[waypoints.length - 1];
+  const scx = s.x + s.w / 2, scy = s.y + s.h / 2;
+  const tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
+  const start = edge.fromAnchor
+    ? anchorAbsolutePoint(s, edge.fromAnchor)
+    : clipPointOnRect(scx, scy, first.x, first.y, { x: s.x, y: s.y, w: s.w, h: s.h });
+  const end = edge.toAnchor
+    ? anchorAbsolutePoint(t, edge.toAnchor)
+    : clipPointOnRect(tcx, tcy, last.x, last.y, { x: t.x, y: t.y, w: t.w, h: t.h });
+  return [start, ...waypoints, end];
+}
+
 function polylineLength(points) {
   let len = 0;
   for (let i = 1; i < points.length; i++) len += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
@@ -246,7 +334,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
   if (edge.routing === 'orthogonal') {
     const points = computeOrthogonalPoints(edge, allNodes);
     if (!points) return null;
-    const d = `M ${points.map((p) => `${p.x} ${p.y}`).join(' L ')}`;
+    const d = pathFromPoints(points, edge.rounded);
     const waypointed = Array.isArray(edge.waypoints) && edge.waypoints.length > 0;
     // The default two-corner Z (both elbow offsets equal) always has exactly
     // 4 points; matching the original single-elbow badge placement (midpoint
@@ -268,7 +356,27 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     // canvas.js's nearestPointIndex(refs.slice(1,-1), ...) an empty list to
     // search rather than mistaking those corners for real bend points.
     const refs = waypointed ? [points[0], ...edge.waypoints, points[points.length - 1]] : [points[0], points[points.length - 1]];
-    return { start: points[0], end: points[points.length - 1], d, badge, labelPos, points, refs };
+    return { start: points[0], end: points[points.length - 1], d, badge, labelPos, points, refs, virtuals: segmentMidpoints(points) };
+  }
+
+  // Direct routing with explicit bend points — the multi-bend counterpart of
+  // the single `edge.curve` arc below. Every point in `refs` is real and
+  // editable here (no synthetic corners), so canvas.js's handles map 1:1.
+  const directWaypoints = Array.isArray(edge.waypoints) ? edge.waypoints : [];
+  if (directWaypoints.length) {
+    const points = computeDirectWaypointed(edge, allNodes, directWaypoints);
+    if (!points) return null;
+    const badge = pointAtPolylineFraction(points, 0.5);
+    return {
+      start: points[0],
+      end: points[points.length - 1],
+      d: pathFromPoints(points, edge.rounded),
+      badge,
+      labelPos: applyLabelOffset({ x: badge.x, y: badge.y - 20 }, edge),
+      points,
+      refs: points,
+      virtuals: segmentMidpoints(points),
+    };
   }
 
   const ep = computeStraightEndpoints(edge, allNodes);
@@ -299,7 +407,28 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
 
   const labelPos = applyLabelOffset({ x: badge.x + nx * 20, y: badge.y + ny * 20 }, edge);
   const points = bend === 0 ? [start, end] : [start, { x: badge.x, y: badge.y }, end];
-  return { start, end, d, badge, labelPos, points, refs: points };
+  // `refs` is the *editable* point list, and a curve has no editable interior
+  // point: its bend is `edge.curve`, a number, and the point in `points` is
+  // just the quadratic's control point (which doesn't even sit on the drawn
+  // curve). Reporting it as a ref would make canvas.js hang a bend handle on
+  // it and then try to splice it out of a waypoint list that doesn't exist.
+  // One virtual handle goes at the curve's true midpoint instead, so dragging
+  // it converts the arc into an explicit bend point right where it looked.
+  // Two of them, at a quarter and three quarters along, rather than one at
+  // the midpoint: the midpoint is where the step-number badge sits, and the
+  // badge paints over the handle and swallows the pointerdown. On a curve
+  // these are points on the actual quadratic (B(t) with t = 0.25 / 0.75), not
+  // on the chord, so they land where the line is drawn.
+  const quad = (t) => ({
+    x: (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * badge.x + t * t * end.x,
+    y: (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * badge.y + t * t * end.y,
+  });
+  const lerp = (t) => ({ x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t });
+  const at = bend === 0 ? lerp : quad;
+  const virtuals = Math.hypot(end.x - start.x, end.y - start.y) < VIRTUAL_HANDLE_MIN_SEG * 2
+    ? []
+    : [at(0.25), at(0.75)];
+  return { start, end, d, badge, labelPos, points, refs: [start, end], virtuals };
 }
 
 // Given a point the user dragged to, returns the perpendicular signed

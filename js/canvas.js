@@ -1622,12 +1622,7 @@ function renderEdge(e) {
   g.appendChild(hit);
 
   if (state.selected && state.selected.kind === 'edge' && state.selected.id === e.id) {
-    const fromHandle = el('circle', { class: 'edge-endpoint-handle', cx: geo.start.x, cy: geo.start.y, r: 6 });
-    const toHandle = el('circle', { class: 'edge-endpoint-handle', cx: geo.end.x, cy: geo.end.y, r: 6 });
-    fromHandle.addEventListener('pointerdown', (ev) => startEndpointDrag(ev, e, 'from'));
-    toHandle.addEventListener('pointerdown', (ev) => startEndpointDrag(ev, e, 'to'));
-    g.appendChild(fromHandle);
-    g.appendChild(toHandle);
+    appendEdgeHandles(g, e, geo);
   }
 
   g.appendChild(badge);
@@ -1651,6 +1646,54 @@ function renderEdge(e) {
   }
 
   return g;
+}
+
+// ---------- Handles on the selected edge ----------
+// Three kinds, matching what draw.io puts on a selected connector:
+//   - endpoint handles, to re-target either end onto another node;
+//   - a solid handle on every real bend point, to move or (double-click)
+//     remove it;
+//   - a faint "virtual" handle at the midpoint of every drawn segment —
+//     drag one and it becomes a real bend point at that spot. This is what
+//     makes bends discoverable: before it, the only way to add one was to
+//     know that double-clicking the line does it.
+// All of them are `no-export`, so they can't leak into a PNG/SVG exported
+// while an edge happens to be selected.
+function appendEdgeHandles(g, e, geo) {
+  const fromHandle = el('circle', { class: 'edge-endpoint-handle no-export', cx: geo.start.x, cy: geo.start.y, r: 6 });
+  const toHandle = el('circle', { class: 'edge-endpoint-handle no-export', cx: geo.end.x, cy: geo.end.y, r: 6 });
+  fromHandle.addEventListener('pointerdown', (ev) => startEndpointDrag(ev, e, 'from'));
+  toHandle.addEventListener('pointerdown', (ev) => startEndpointDrag(ev, e, 'to'));
+  g.appendChild(fromHandle);
+  g.appendChild(toHandle);
+
+  const bends = geo.refs.slice(1, -1);
+  bends.forEach((p, i) => {
+    const h = el('circle', { class: 'edge-waypoint-handle no-export', cx: p.x, cy: p.y, r: 5 });
+    // The index is known from the handle itself, so unlike a drag on the
+    // line body this never has to guess which point was grabbed.
+    h.addEventListener('pointerdown', (ev) => startWaypointDrag(ev, e, i));
+    h.addEventListener('dblclick', (ev) => {
+      ev.stopPropagation();
+      removeWaypoint(e, i);
+    });
+    g.appendChild(h);
+  });
+
+  // Where these belong depends on the route's shape, so the geometry decides
+  // (geo.virtuals) rather than canvas.js assuming segment midpoints — a
+  // quadratic arc's midpoint isn't on any segment of its point list.
+  for (const m of geo.virtuals || []) {
+    // Skip one that would sit under something that already owns those pixels:
+    // a real bend handle (a short jog can put them within a few px of each
+    // other), or the step-number badge, which paints after the handles and
+    // would otherwise swallow the pointerdown.
+    if (bends.some((p) => Math.hypot(p.x - m.x, p.y - m.y) < 12)) continue;
+    if (Math.hypot(geo.badge.x - m.x, geo.badge.y - m.y) < 15) continue;
+    const h = el('circle', { class: 'edge-virtual-handle no-export', cx: m.x, cy: m.y, r: 4 });
+    h.addEventListener('pointerdown', (ev) => startNewWaypointDrag(ev, e, m));
+    g.appendChild(h);
+  }
 }
 
 // The default arrowhead marker (index.html) is shared by every edge and
@@ -2321,12 +2364,14 @@ const EDGE_POINT_GRAB_RADIUS = 10;
 
 function startEdgeBend(ev, edge) {
   ev.stopPropagation();
-  if (edge.routing === 'orthogonal') {
-    if (edge.waypoints && edge.waypoints.length) startWaypointDrag(ev, edge);
-    else startElbowDrag(ev, edge);
-  } else {
-    startCurveDrag(ev, edge);
-  }
+  // Waypointed routes (either routing mode) move the nearest existing bend;
+  // an orthogonal route without waypoints slides one of its two default
+  // corners; a plain direct line sets its single arc. In every case a drag
+  // moves what's already there — adding a bend is its own gesture (drag a
+  // virtual handle, or double-click the line).
+  if (edge.waypoints && edge.waypoints.length) startWaypointDragFromLine(ev, edge);
+  else if (edge.routing === 'orthogonal') startElbowDrag(ev, edge);
+  else startCurveDrag(ev, edge);
 }
 
 // ---- Curve: one bend point ----
@@ -2441,25 +2486,62 @@ function onElbowDragUp() {
   elbowDragCtx = null;
 }
 
-// ---- Orthogonal, waypointed: move an existing point only (adding one is
-// a double-click, see onEdgeDoubleClick) ----
+// ---- Waypoints: move an existing bend point (either routing mode) ----
+// Adding one is a separate, deliberate gesture — drag a virtual handle, or
+// double-click the line (onEdgeDoubleClick) — so an ordinary drag can never
+// pile up bends the user didn't ask for. (An early version did add one per
+// drag; a diagram grew unpredictable fast, which is why it doesn't.)
 
 let waypointDragCtx = null;
 
-function startWaypointDrag(ev, edge) {
-  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
-  if (!geo) return;
-  const mid = geo.refs.slice(1, -1);
-  const p0 = toSVGCoords(ev.clientX, ev.clientY);
-  const { index, dist } = nearestPointIndex(mid, p0);
+function startWaypointDrag(ev, edge, index, opts = {}) {
+  ev.stopPropagation();
   waypointDragCtx = {
     edge,
-    grabIndex: dist < EDGE_POINT_GRAB_RADIUS ? index : -1, // -1 = not near a point; drag does nothing but a click still selects
+    grabIndex: index, // -1 = nothing grabbed; the drag does nothing, a click still selects
+    // Set when this drag is what created the point: a drag that never moves
+    // shouldn't leave a stray bend behind, so pointerup takes it back out.
+    createdIndex: opts.created ? index : -1,
     startClient: { x: ev.clientX, y: ev.clientY },
     moved: false,
   };
   window.addEventListener('pointermove', onWaypointDragMove);
   window.addEventListener('pointerup', onWaypointDragUp);
+}
+
+// Dragging the line body rather than a handle: figure out which bend point
+// (if any) is close enough to have been the intended grab.
+function startWaypointDragFromLine(ev, edge) {
+  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+  if (!geo) return;
+  const p0 = toSVGCoords(ev.clientX, ev.clientY);
+  const { index, dist } = nearestPointIndex(geo.refs.slice(1, -1), p0);
+  startWaypointDrag(ev, edge, dist < EDGE_POINT_GRAB_RADIUS ? index : -1);
+}
+
+// Dragging a virtual (segment-midpoint) handle: insert a real bend point
+// there, then drag it — so the point follows the cursor from the first
+// pixel, the way draw.io's do.
+function startNewWaypointDrag(ev, edge, point) {
+  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+  if (!geo) return;
+  const { index } = nearestSegmentIndex(geo.refs, point);
+  edge.waypoints = Array.isArray(edge.waypoints) ? [...edge.waypoints] : [];
+  edge.waypoints.splice(index, 0, { x: point.x, y: point.y });
+  // A direct edge's single arc and an explicit bend list are two ways of
+  // saying the same thing; the list wins, so drop the arc rather than leave
+  // a value that silently stops applying.
+  if (edge.routing !== 'orthogonal') edge.curve = undefined;
+  renderAll();
+  startWaypointDrag(ev, edge, index, { created: true });
+}
+
+function removeWaypoint(edge, index) {
+  if (!edge.waypoints) return;
+  edge.waypoints.splice(index, 1);
+  if (!edge.waypoints.length) edge.waypoints = undefined;
+  renderAll();
+  saveState();
 }
 
 function onWaypointDragMove(ev) {
@@ -2477,9 +2559,19 @@ function onWaypointDragUp() {
   window.removeEventListener('pointermove', onWaypointDragMove);
   window.removeEventListener('pointerup', onWaypointDragUp);
   if (!waypointDragCtx) return;
-  if (waypointDragCtx.moved) saveState();
-  else selectItem('edge', waypointDragCtx.edge.id);
+  const { edge, moved, createdIndex } = waypointDragCtx;
   waypointDragCtx = null;
+  if (moved) {
+    saveState();
+    return;
+  }
+  // A click, not a drag: undo the point this gesture had speculatively added
+  // so a stray click on a virtual handle leaves the route exactly as it was.
+  if (createdIndex >= 0 && edge.waypoints) {
+    edge.waypoints.splice(createdIndex, 1);
+    if (!edge.waypoints.length) edge.waypoints = undefined;
+  }
+  selectItem('edge', edge.id);
 }
 
 // ---- Double-click: the only way to add or remove a bend point beyond an
@@ -2488,35 +2580,34 @@ function onWaypointDragUp() {
 function onEdgeDoubleClick(ev, edge) {
   ev.stopPropagation();
   const p = toSVGCoords(ev.clientX, ev.clientY);
+  const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
+  if (!geo) return;
+  const mid = geo.refs.slice(1, -1);
 
-  if (edge.routing === 'orthogonal') {
-    const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
-    if (!geo) return;
-    const mid = geo.refs.slice(1, -1);
-    if (mid.length) {
-      const { index, dist } = nearestPointIndex(mid, p);
-      if (index >= 0 && dist < EDGE_POINT_GRAB_RADIUS + 2) {
-        edge.waypoints.splice(index, 1);
-        if (!edge.waypoints.length) edge.waypoints = undefined;
-        renderAll();
-        saveState();
-        return;
-      }
+  // On an existing bend point: remove it.
+  if (mid.length) {
+    const { index, dist } = nearestPointIndex(mid, p);
+    if (index >= 0 && dist < EDGE_POINT_GRAB_RADIUS + 2) {
+      removeWaypoint(edge, index);
+      return;
     }
-    // Not near an existing point — add a new elbow here.
-    const { index } = nearestSegmentIndex(geo.refs, p);
-    edge.waypoints = mid.length ? [...edge.waypoints] : [];
-    edge.waypoints.splice(index, 0, { x: p.x, y: p.y });
+  }
+
+  // A direct edge's single arc has no handle of its own — double-clicking
+  // the line is how it's cleared, so that stays ahead of adding a bend.
+  if (edge.routing !== 'orthogonal' && typeof edge.curve === 'number' && edge.curve !== 0) {
+    edge.curve = undefined;
     renderAll();
     saveState();
     return;
   }
 
-  if (typeof edge.curve === 'number' && edge.curve !== 0) {
-    edge.curve = undefined;
-    renderAll();
-    saveState();
-  }
+  // Otherwise add a bend here — both routing modes, same gesture.
+  const { index } = nearestSegmentIndex(geo.refs, p);
+  edge.waypoints = mid.length ? [...edge.waypoints] : [];
+  edge.waypoints.splice(index, 0, { x: p.x, y: p.y });
+  renderAll();
+  saveState();
 }
 
 // ---------- Selection & deletion ----------
@@ -3008,7 +3099,7 @@ function buildEdgeMenuItems(e, menuX, menuY) {
 
   const isOrthogonal = e.routing === 'orthogonal';
   const routingItems = [
-    { label: 'Drag the line to move its bend', heading: true },
+    { label: 'Drag a hollow dot to add a bend', heading: true },
     {
       label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved',
       action: () => {
@@ -3027,6 +3118,15 @@ function buildEdgeMenuItems(e, menuX, menuY) {
       },
     },
   ];
+  routingItems.push('-');
+  routingItems.push({
+    label: (e.rounded ? '✓ ' : '   ') + 'Rounded Corners',
+    action: () => {
+      e.rounded = e.rounded ? undefined : true;
+      renderAll();
+      saveState();
+    },
+  });
   const hasElbowOffset = (typeof e.elbowOffset === 'number' && e.elbowOffset !== 0) || (typeof e.elbowOffsetEnd === 'number' && e.elbowOffsetEnd !== 0);
   if (e.curve || hasElbowOffset || (e.waypoints && e.waypoints.length)) {
     routingItems.push({
