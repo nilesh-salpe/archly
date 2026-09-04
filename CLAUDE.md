@@ -44,10 +44,15 @@ exports).
   Data, Processing, Reliability, Security, Observability, ML, GenAI, RAG,
   External, General). `container: true` marks boundary/grouping shapes
   (Region, AZ, VPC, Subnet, Group) that render as large dashed background
-  rects. `textOnly: true` marks the freeform "Text" tool (transparent body,
-  word-wrapped, auto-grows height — see `recomputeTextOnlyHeight` in
-  `js/canvas.js`). `imageOnly: true` marks the freeform "Image" tool —
-  see **Uploaded images** below.
+  rects. `textOnly: true` marks the freeform text tools — "Text", "Note", and
+  "Paragraph" (transparent body, word-wrapped, auto-grows height — see
+  `recomputeTextOnlyHeight` in `js/canvas.js`). "Paragraph" is the long-form
+  one: left-aligned by default (`nodeTextAlign`), and the one whose wrap
+  width is most worth setting by hand (every node is drag-resizable — see
+  **Resizing** below). `defaultLabel`
+  (optional) lets a component's short palette name differ from the
+  placeholder text the dropped node starts with. `imageOnly: true` marks
+  the freeform "Image" tool — see **Uploaded images** below.
   - **Uploaded images**: two independent features, both storing the picked
     file as a `data:` URL directly on the node (no server — same
     no-backend approach as everything else, so it's just a JSON field that
@@ -71,15 +76,17 @@ exports).
        plain node (no border-connect — nothing to connect yet). Once an
        image is set it behaves like a regular node: full border
        drag-to-connect via `startDragOrConnect`, double-click to replace,
-       and a drag handle (`startResizeNode`, shared with container
-       resizing) since — unlike every other palette component — there's no
-       fixed "correct" size. `recomputeImageNodeSize` auto-fits the box's
+       and the same eight resize handles as everything else (Shift on a
+       corner keeps its proportions — it's the node type where an arbitrary
+       aspect ratio matters most). `recomputeImageNodeSize` auto-fits the box's
        height to the picked image's real aspect ratio exactly once, the
        first time an image lands on a given node (`node.imageSizedOnce`),
        so replacing an image later never yanks a box the user already
        resized by hand back to a different aspect ratio.
     2. **Custom Icon** (right-click a regular component → Icon → Custom
-       Icon…) — `node.customIcon` overrides the built-in `ICONS[n.icon]`
+       Icon…; the same submenu's **Hide Icon** sets `node.hideIcon`, which
+       drops the glyph entirely and centers the label in the box, for
+       components used as plain labelled shapes) — `node.customIcon` overrides the built-in `ICONS[n.icon]`
        stroke-SVG glyph in `renderRegularNode`'s icon slot with an
        `<image>` at the same position/size instead; everything else about
        the node (box, label, category color) is unchanged. Reset to
@@ -103,8 +110,35 @@ exports).
   - **Snapping**: single-node drags snap to a 10px grid, or to alignment with
     other nodes' edges/centers (drawn as `.align-guide` lines) when within
     threshold — see `computeAlignmentSnap`/`snapToGrid` in the node-dragging
-    section. Hold Alt to bypass both. Group drags and container resizes are
+    section. Hold Alt to bypass both. Group drags and resizes are
     grid-snapped only (no alignment guides).
+  - **Resizing**: every node kind is drag-resizable from an eight-handle
+    frame (four corners + four side midpoints — `RESIZE_DIRS`/
+    `appendResizeHandles`), rendered only while the node is the *single*
+    selection. That gating isn't cosmetic: handles necessarily sit inside
+    `CONNECT_BORDER_ZONE`, so keeping them off unselected nodes leaves the
+    whole border free for drawing connections. `startResizeNode(ev, node,
+    dir)` records the box as it was at pointerdown and recomputes from that
+    origin every step (never incrementally, so snapping can't drift); `dir`
+    decides which edges move, so a side handle changes one dimension only.
+    Alt bypasses grid snapping, Shift on a corner locks the aspect ratio.
+    Handles are marked `no-export`, so export.js's existing strip keeps them
+    out of PNG/SVG output. Touch (`isCoarsePointer()`) gets the four corners
+    only, at a bigger size — eight finger-sized targets would blanket the
+    border, which is also the connect surface. Right-click → **Reset Size**
+    (`resetNodeSize`, `*Silent` variant for multi-select) restores the
+    palette default. Resizing a multi-selection as a group is deliberately
+    not supported — it needs a different transform model.
+    - **Manual vs. auto height**: a resize that moved the height sets
+      `node.manualH`, which flips `applyFittedHeight` from "assign the
+      auto-fit height" to "use the user's height, floored by what the
+      wrapped text actually needs". So a hand-sized box survives later label
+      and font edits (it grows rather than resetting), can go below the
+      component's default height, and still can't clip its own label. Nodes
+      that were never height-resized behave exactly as they did before this
+      existed. `manualH` has to round-trip through YAML export/import and
+      pattern files, or the load-time `refitAllNodeHeights()` pass would
+      undo the sizing on the next load.
   - **Undo/redo**: `saveState()` is the single choke point every mutation
     already calls, so it also pushes a JSON snapshot onto the `undoHistory`
     array (`pushHistory`) — no other mutator needs to know about undo.
@@ -116,18 +150,38 @@ exports).
     keeps working unchanged for every pointer-math function. `export.js`
     strips that inline style before export so exports are always full-res
     regardless of on-screen zoom.
-  - **Text formatting** (the `textOnly` "Text" tool *and* regular
+  - **Multi-line labels**: every node's label can hold newlines, and every
+    label editor is a `<textarea>` (containers excepted — their label is one
+    plain `<text>`, never wrapped). Enter's meaning differs by node family:
+    on a text-first node (Text/Note/Paragraph) it inserts a line and
+    Cmd/Ctrl+Enter commits; on a regular component label Enter commits and
+    Shift+Enter inserts a line. Regular labels are no longer clamped and
+    ellipsized at two lines — `recomputeRegularNodeHeight` grows the box
+    downward to fit instead (never below the component's default height, so
+    one- and two-line labels size exactly as they always did — unless the box
+    was hand-resized, see **Resizing**'s `manualH` note).
+    `recomputeNodeHeight` is the dispatching entry point both families share;
+    `refitAllNodeHeights` runs it over a whole diagram on load, since a saved
+    or hand-edited file can carry a height that no longer fits its text.
+  - **Text formatting** (the `textOnly` text tools *and* regular
     component/container labels — not containers' own `container-label`):
     `TEXT_STYLE_PRESETS` (`normal`/`h1`/`h2`/`h3`/`italic`, each a
-    `{fontSize, fontWeight, italic}`) plus an optional `node.textColor` hex
-    string. Right-click → style radio options and "Text Color…"
-    (`openTextColorPanel`) set `node.textStyle`/`node.textColor` via
-    `setTextStyle`/`setTextColor`. `textInlineStyle(n)` renders these as an
+    `{fontSize, fontWeight, italic}`), `node.fontFamily`
+    (`sans`/`serif`/`mono`, keys into `FONT_STACKS` — a key rather than a raw
+    CSS stack, so nothing arbitrary lands in the inline style), and
+    `node.textAlign` (`left`/`center`/`right`, defaulting per
+    `nodeTextAlign`), plus an optional `node.textColor` hex string.
+    `text-anchor` has to ride in that same inline `style`, not as a
+    presentation attribute — `.node-label`'s own `text-anchor: middle` is a
+    CSS rule, and a CSS rule beats a presentation attribute.
+    Right-click → Text Style's radio options, Font, Align, and "Text Color…"
+    (`openTextColorPanel`) set these via `setTextStyle`/`setFontFamily`/
+    `setTextAlign`/`setTextColor`. `textInlineStyle(n)` renders these as an
     inline SVG `style` attribute (wins over the CSS class defaults, and
     survives `svg.cloneNode(true)` on export with no `EXPORT_STYLE` changes
     needed) — consumed by `buildTextOnlyLabel`/`recomputeTextOnlyHeight` and
     by `buildRegularLabel` (which only switches away from its small fixed
-    12px/500-weight default once `textStyle`/`textColor` is actually set, so
+    12px/500-weight default once one of those fields is actually set, so
     a node that never touches this renders exactly as before the feature
     existed). Both fields round-trip through YAML export/import and pattern
     files.

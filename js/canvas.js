@@ -120,7 +120,9 @@ function addNode(componentId, cx, cy) {
     id: state.nextNodeId++,
     type: def.id,
     category: def.category,
-    label: def.label,
+    // `defaultLabel` (Paragraph) lets a component's palette name stay short
+    // while the node it drops starts with real placeholder prose.
+    label: def.defaultLabel || def.label,
     icon: def.icon,
     container: !!def.container,
     textOnly: !!def.textOnly,
@@ -249,6 +251,7 @@ function clearDiagram() {
 function loadDiagram(nodes, edges, nextNodeId, nextEdgeId) {
   resetFlow();
   state.nodes = nodes;
+  refitAllNodeHeights();
   state.edges = edges;
   state.nextNodeId = nextNodeId;
   state.nextEdgeId = nextEdgeId;
@@ -294,6 +297,7 @@ function loadState() {
     state.edges = data.edges || [];
     state.nextNodeId = data.nextNodeId || 1;
     state.nextEdgeId = data.nextEdgeId || 1;
+    refitAllNodeHeights();
   } catch (e) {
     /* corrupt storage — start fresh */
   }
@@ -712,21 +716,12 @@ function renderContainerNode(n) {
   const label = el('text', { class: 'container-label', x: 10, y: 20 }, textNode(n.label));
   const labelHit = el('rect', { class: 'label-hit', x: 4, y: 4, width: Math.min(n.w - 8, 220), height: 22 });
 
-  const resize = el('rect', {
-    class: 'resize-handle',
-    x: n.w - 10,
-    y: n.h - 10,
-    width: 10,
-    height: 10,
-  });
-
   g.appendChild(rect);
   g.appendChild(label);
   g.appendChild(labelHit);
-  g.appendChild(resize);
+  appendResizeHandles(g, n);
 
   rect.addEventListener('pointerdown', (ev) => startDragNode(ev, n));
-  resize.addEventListener('pointerdown', (ev) => startResizeNode(ev, n));
   labelHit.addEventListener('click', (ev) => {
     ev.stopPropagation();
     openRename(n);
@@ -744,16 +739,31 @@ function renderContainerNode(n) {
 
 let measureCtx = null;
 
-function fontString(fontSize, fontWeight) {
-  return `${fontWeight} ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+// Font family is a per-node override (right-click → Text Style → Font),
+// stored as one of these keys rather than a raw CSS stack so the value stays
+// short in YAML and can't smuggle arbitrary CSS into the inline style
+// attribute. `sans` is the default and is never written to the node.
+const FONT_STACKS = {
+  sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  serif: 'Georgia, "Times New Roman", Times, serif',
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+};
+const FONT_LABELS = { sans: 'Sans', serif: 'Serif', mono: 'Monospace' };
+
+function fontStack(fontFamily) {
+  return FONT_STACKS[fontFamily] || FONT_STACKS.sans;
+}
+
+function fontString(fontSize, fontWeight, fontFamily) {
+  return `${fontWeight} ${fontSize}px ${fontStack(fontFamily)}`;
 }
 
 // Used to size the edge protocol/label chip to its actual text (labelStyle
 // controls make its font size/weight variable, so the old fixed per-char
 // estimate no longer holds).
-function textWidth(str, fontSize, fontWeight) {
+function textWidth(str, fontSize, fontWeight, fontFamily) {
   if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
-  measureCtx.font = fontString(fontSize, fontWeight);
+  measureCtx.font = fontString(fontSize, fontWeight, fontFamily);
   return measureCtx.measureText(str).width;
 }
 
@@ -762,9 +772,9 @@ function textWidth(str, fontSize, fontWeight) {
 // break rather than just more whitespace to collapse, so a note's own line
 // structure (a title line, a blank line, a bulleted list, …) survives
 // instead of being reflowed into one continuous paragraph.
-function wrapText(text, maxWidth, fontSize, fontWeight) {
+function wrapText(text, maxWidth, fontSize, fontWeight, fontFamily) {
   if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
-  measureCtx.font = fontString(fontSize, fontWeight);
+  measureCtx.font = fontString(fontSize, fontWeight, fontFamily);
 
   const lines = [];
   for (const paragraph of text.split('\n')) {
@@ -800,20 +810,6 @@ function wrapText(text, maxWidth, fontSize, fontWeight) {
     lines.push(current);
   }
   return lines.length ? lines : [''];
-}
-
-// Wraps then clamps to maxLines, ellipsizing the last visible line — used for
-// icon+label cards, which have a fixed height and can't grow with content.
-function wrapClamped(text, maxWidth, maxLines, fontSize, fontWeight) {
-  const lines = wrapText(text, maxWidth, fontSize, fontWeight);
-  if (lines.length <= maxLines) return lines;
-  const clamped = lines.slice(0, maxLines);
-  let last = clamped[maxLines - 1];
-  while (last.length > 0 && measureCtx.measureText(last + '…').width > maxWidth) {
-    last = last.slice(0, -1);
-  }
-  clamped[maxLines - 1] = last + '…';
-  return clamped;
 }
 
 // Label text style/color (right-click a node → Text Style). Shared by the
@@ -864,51 +860,153 @@ function textInlineStyle(n) {
   let style = `font-size:${preset.fontSize}px;font-weight:${preset.fontWeight};`;
   if (preset.italic) style += 'font-style:italic;';
   if (n.textColor) style += `fill:${n.textColor};`;
+  if (n.fontFamily) style += `font-family:${fontStack(n.fontFamily)};`;
   return style;
 }
 
-function buildMultilineText(cls, cx, lastLineY, lines, lineHeight) {
+// Horizontal alignment of a node's own text block. Only Paragraph defaults to
+// left — everything else stays centered, the way every label rendered before
+// this existed — so `textAlign` is an override, never written unless set.
+const TEXT_ALIGN_LABELS = { left: 'Left', center: 'Center', right: 'Right' };
+
+function nodeTextAlign(n) {
+  if (TEXT_ALIGN_LABELS[n.textAlign]) return n.textAlign;
+  return n.type === 'paragraph' ? 'left' : 'center';
+}
+
+// x position + text-anchor for a text block of width `w` under `align`.
+function alignAnchor(align, w, pad) {
+  if (align === 'left') return { x: pad, anchor: 'start' };
+  if (align === 'right') return { x: w - pad, anchor: 'end' };
+  return { x: w / 2, anchor: 'middle' };
+}
+
+function buildMultilineText(cls, cx, lastLineY, lines, lineHeight, anchor, inlineStyle) {
   const startY = lastLineY - (lines.length - 1) * lineHeight;
   const text = el('text', { class: cls, x: cx, y: startY });
+  // text-anchor rides in the inline style, not as a presentation attribute:
+  // .node-label's own `text-anchor: middle` (styles.css, and EXPORT_STYLE)
+  // is a CSS rule, and a CSS rule beats a presentation attribute — so an
+  // attribute here would be silently ignored. Only written when it isn't the
+  // default, so untouched labels render exactly as before.
+  let style = inlineStyle || '';
+  if (anchor && anchor !== 'middle') style += `text-anchor:${anchor};`;
+  if (style) text.setAttribute('style', style);
   lines.forEach((line, i) => {
     text.appendChild(el('tspan', { x: cx, dy: i === 0 ? 0 : lineHeight }, textNode(line)));
   });
   return text;
 }
 
-function buildRegularLabel(n) {
-  // Text Style/Color (right-click → Text Style) reuse the freeform Text
-  // tool's textStyle/textColor fields — default font-size/weight (12/500)
-  // and fixed 13px line height are unchanged from before this existed, so a
-  // node that never touches the feature renders identically.
-  const hasTextOverride = !!(n.textStyle || n.textColor);
+// Where a regular node's icon ends (icon box is y 8..34, see renderRegularNode)
+// — the top of the space its label gets. With the icon hidden the label owns
+// the whole box and just gets a small pad.
+const ICON_BAND_BOTTOM = 34;
+const LABEL_PAD_BOTTOM = 10;
+
+// The one place a regular node's label metrics are computed, shared by
+// buildRegularLabel (drawing) and recomputeNodeHeight (sizing) so the box is
+// always sized to exactly the block that gets drawn in it.
+function regularLabelLayout(n) {
+  // Text Style/Color/Font (right-click → Text Style) reuse the freeform Text
+  // tool's fields — default font-size/weight (12/500) and fixed 13px line
+  // height are unchanged from before this existed, so a node that never
+  // touches the feature renders identically.
+  const hasTextOverride = !!(n.textStyle || n.textColor || n.fontFamily);
   const preset = hasTextOverride ? textStylePreset(n) : { fontSize: 12, fontWeight: 500 };
   const lineHeight = hasTextOverride ? Math.round(preset.fontSize * 1.2) : 13;
-  const lines = wrapClamped(n.label, n.w - 16, 2, preset.fontSize, preset.fontWeight);
-  const textEl = buildMultilineText('node-label', n.w / 2, n.h - 12, lines, lineHeight);
-  if (hasTextOverride) textEl.setAttribute('style', textInlineStyle(n));
-  return textEl;
+  const lines = wrapText(n.label, n.w - 16, preset.fontSize, preset.fontWeight, n.fontFamily);
+  const top = n.hideIcon ? 10 : ICON_BAND_BOTTOM;
+  return { hasTextOverride, preset, lineHeight, lines, top };
+}
+
+function buildRegularLabel(n) {
+  const { hasTextOverride, preset, lineHeight, lines } = regularLabelLayout(n);
+  // Labels are no longer clamped/ellipsized at two lines — the box grows to
+  // fit instead (recomputeNodeHeight), so an explicit newline in a label
+  // actually shows up. With the icon hidden the block centers in the box;
+  // otherwise it stays bottom-anchored under the icon, exactly as before.
+  const lastLineY = n.hideIcon
+    ? n.h / 2 + preset.fontSize * 0.3 + ((lines.length - 1) * lineHeight) / 2
+    : n.h - 12;
+  const { x, anchor } = alignAnchor(nodeTextAlign(n), n.w, 8);
+  const inline = hasTextOverride ? textInlineStyle(n) : '';
+  return buildMultilineText('node-label', x, lastLineY, lines, lineHeight, anchor, inline);
 }
 
 function buildTextOnlyLabel(n) {
   const preset = textStylePreset(n);
-  const lines = wrapText(n.label, n.w - 16, preset.fontSize, preset.fontWeight);
+  const lines = wrapText(n.label, n.w - 16, preset.fontSize, preset.fontWeight, n.fontFamily);
   const lineHeight = Math.round(preset.fontSize * 1.25);
   const lastLineY = n.h / 2 + preset.fontSize * 0.3 + ((lines.length - 1) * lineHeight) / 2;
-  const textEl = buildMultilineText('node-label text-node-label', n.w / 2, lastLineY, lines, lineHeight);
-  textEl.setAttribute('style', textInlineStyle(n));
-  return textEl;
+  const { x, anchor } = alignAnchor(nodeTextAlign(n), n.w, 8);
+  return buildMultilineText('node-label text-node-label', x, lastLineY, lines, lineHeight, anchor, textInlineStyle(n));
 }
 
-// Text-only nodes have no manual resize handle, so their box grows to fit
-// wrapped content instead — called whenever a text-only node's label or
-// text style changes (font size affects both wrapping and line height).
+// Text-only nodes' boxes grow to fit their wrapped content (their width is
+// the fixed side — set by the component default, or by dragging a resize
+// handle).
 function recomputeTextOnlyHeight(n) {
   if (!n.textOnly) return;
   const preset = textStylePreset(n);
-  const lines = wrapText(n.label, n.w - 16, preset.fontSize, preset.fontWeight);
+  const lines = wrapText(n.label, n.w - 16, preset.fontSize, preset.fontWeight, n.fontFamily);
   const lineHeight = Math.round(preset.fontSize * 1.25);
-  n.h = Math.max(44, lines.length * lineHeight + 20);
+  applyFittedHeight(n, lines.length * lineHeight + 20, 44);
+}
+
+// How a node's height relates to its text, in one place:
+//   - never hand-resized: exactly the auto-fit height it always was —
+//     max(the component's default floor, what the wrapped text needs).
+//   - hand-resized (node.manualH): the user's height wins, with the text's
+//     own requirement as the only floor. So a resized box can go smaller
+//     than the component default, but never small enough to clip its label,
+//     and a later label/font edit grows it rather than resetting it.
+function applyFittedHeight(n, textH, autoMinH) {
+  n.h = n.manualH ? Math.max(n.h, textH) : Math.max(autoMinH, textH);
+}
+
+// Regular icon+label nodes grow downward when their label needs more room
+// than the component's default height gives it — a label can now hold as
+// many lines as it likes (explicit newlines included) instead of being
+// ellipsized at two. Never shrinks below the component's own default, so a
+// one- or two-line label sizes exactly as it always did.
+function recomputeRegularNodeHeight(n) {
+  if (n.container || n.textOnly || n.imageOnly) return;
+  const def = getComponent(n.type) || {};
+  const minH = def.h || DEFAULT_NODE_H;
+  const { lineHeight, lines, top } = regularLabelLayout(n);
+  // `top` is the icon band's bottom when an icon shows, so the text floor
+  // already leaves the glyph its room — a hand-shrunk box can't clip it.
+  applyFittedHeight(n, Math.ceil(top + lines.length * lineHeight + LABEL_PAD_BOTTOM), minH);
+}
+
+// The single "re-fit this node's box to its text" entry point — dispatches to
+// whichever of the two rules above applies, so callers (label edit, text
+// style/font change, icon hide/show, width resize, diagram load) don't have
+// to know which kind of node they're holding.
+function recomputeNodeHeight(n) {
+  if (!n) return;
+  if (n.textOnly) recomputeTextOnlyHeight(n);
+  else recomputeRegularNodeHeight(n);
+}
+
+// Diagrams saved before a text change (or hand-edited YAML) can carry a
+// height that no longer fits their label — re-fit every node once on load so
+// nothing renders clipped. Idempotent: re-running it on already-fitted nodes
+// is a no-op.
+function refitAllNodeHeights() {
+  for (const n of state.nodes) recomputeNodeHeight(n);
+}
+
+// Text hit-testing in SVG only registers clicks on painted glyph ink, so the
+// clickable rename target is an invisible rect over the label block. It
+// tracks the block's real height now that a label can run to any number of
+// lines — with the icon showing, whatever's above it stays free for dragging.
+function regularLabelHitBox(n) {
+  const { lineHeight, lines, top } = regularLabelLayout(n);
+  const blockH = lines.length * lineHeight + 6;
+  const y = n.hideIcon ? Math.max(2, (n.h - blockH) / 2) : Math.max(top, n.h - 14 - blockH);
+  return { x: 2, y, width: n.w - 4, height: Math.min(blockH, n.h - y - 2) };
 }
 
 function renderRegularNode(n) {
@@ -940,8 +1038,11 @@ function renderRegularNode(n) {
   // stroke-SVG glyph for an uploaded image in the same slot — a plain <image>
   // sized to the icon box rather than the 24-unit-viewBox scale trick the
   // built-in icons use, since an uploaded image has no fixed internal grid.
+  // hideIcon (right-click → Icon → Hide Icon) drops the symbol entirely and
+  // hands the whole box to the label — for the General shapes used as plain
+  // labelled boxes, where the stock glyph is just noise.
   let iconG = null;
-  if (!n.textOnly) {
+  if (!n.textOnly && !n.hideIcon) {
     const iconSize = 26;
     if (n.customIcon) {
       iconG = el('image', {
@@ -961,19 +1062,17 @@ function renderRegularNode(n) {
 
   const label = n.textOnly ? buildTextOnlyLabel(n) : buildRegularLabel(n);
 
-  // Text hit-testing in SVG only registers clicks on painted glyph ink, not
-  // the full label area, so an invisible rect is the reliable click target
-  // for rename. It sits in the bottom band for icon+label nodes (leaving the
-  // icon/upper body free to drag), or nearly the whole box for text-only
-  // nodes (leaving a thin border to grab for dragging).
+  // See regularLabelHitBox — text-only nodes instead give nearly the whole
+  // box to rename, leaving a thin border to grab for dragging.
   const labelHit = n.textOnly
     ? el('rect', { class: 'label-hit', x: 4, y: 4, width: n.w - 8, height: n.h - 8 })
-    : el('rect', { class: 'label-hit', x: 2, y: n.h - 24, width: n.w - 4, height: 20 });
+    : el('rect', { class: 'label-hit', ...regularLabelHitBox(n) });
 
   g.appendChild(body);
   if (iconG) g.appendChild(iconG);
   g.appendChild(label);
   g.appendChild(labelHit);
+  appendResizeHandles(g, n);
 
   body.addEventListener('pointerdown', (ev) => startDragOrConnect(ev, n));
   body.addEventListener('pointermove', (ev) => updateBorderCursor(ev, n, body));
@@ -1035,8 +1134,7 @@ function renderImageNode(n) {
     g.appendChild(el('text', { class: 'image-placeholder-label', x: n.w / 2, y: n.h / 2 + 24 }, textNode('Click to add image')));
   }
 
-  const resize = el('rect', { class: 'resize-handle', x: n.w - 10, y: n.h - 10, width: 10, height: 10 });
-  g.appendChild(resize);
+  appendResizeHandles(g, n);
 
   if (hasImage) {
     frame.addEventListener('pointerdown', (ev) => startDragOrConnect(ev, n));
@@ -1054,7 +1152,6 @@ function renderImageNode(n) {
       promptImageUpload(n, 'imageSrc');
     });
   }
-  resize.addEventListener('pointerdown', (ev) => startResizeNode(ev, n));
   g.addEventListener('click', (ev) => onNodeClick(ev, n));
   g.addEventListener('contextmenu', (ev) => onNodeContextMenu(ev, n));
 
@@ -1063,15 +1160,30 @@ function renderImageNode(n) {
 
 function openLabelEditor(node, labelEl) {
   const rect = labelEl.getBoundingClientRect();
-  const multiline = !!node.textOnly;
+  // Every node's label can hold newlines now, so every editor is a textarea.
+  // The two families differ only in what Enter does: on a text-first node
+  // (Text/Note/Paragraph) it inserts a line, and Cmd/Ctrl+Enter commits; on a
+  // regular component label — where a single line is still the common case —
+  // Enter commits and Shift+Enter inserts a line. Containers keep the
+  // single-line <input>: their label is one plain <text>, never wrapped.
+  const multiline = !node.container;
+  const textFirst = !!node.textOnly;
   const input = document.createElement(multiline ? 'textarea' : 'input');
   if (!multiline) input.type = 'text';
   input.className = 'name-editor' + (multiline ? ' name-editor-multiline' : '');
   input.value = node.label;
-  input.style.left = `${rect.left - 6}px`;
+  // Size the editor to the node's box, not to the (possibly short) text it
+  // currently holds — a two-word label in a wide box would otherwise open a
+  // cramped editor with no room to type the extra lines this now supports.
+  const nodeEl = labelEl.closest ? labelEl.closest('g.node') : null;
+  const box = nodeEl ? nodeEl.getBoundingClientRect() : rect;
+  const lineCount = node.label.split('\n').length;
+  input.style.left = `${Math.min(rect.left - 6, box.left)}px`;
   input.style.top = `${rect.top - 4}px`;
-  input.style.width = `${Math.max(70, rect.width + 24)}px`;
-  if (multiline) input.style.height = `${Math.max(40, rect.height + 16)}px`;
+  input.style.width = `${Math.max(90, box.width, rect.width + 24)}px`;
+  if (multiline) {
+    input.style.height = `${Math.max(textFirst ? 40 : 30, rect.height + 16, lineCount * 20 + 14)}px`;
+  }
   document.body.appendChild(input);
   input.focus();
   input.select();
@@ -1082,7 +1194,7 @@ function openLabelEditor(node, labelEl) {
     done = true;
     const v = input.value.trim();
     if (v) node.label = v;
-    recomputeTextOnlyHeight(node);
+    recomputeNodeHeight(node);
     input.remove();
     renderAll();
     saveState();
@@ -1094,7 +1206,13 @@ function openLabelEditor(node, labelEl) {
   };
 
   input.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter' && (!multiline || ev.metaKey || ev.ctrlKey)) commit();
+    if (ev.key === 'Enter') {
+      const commits = textFirst ? ev.metaKey || ev.ctrlKey : !ev.shiftKey;
+      if (commits) {
+        ev.preventDefault(); // otherwise the textarea also inserts the newline it's committing on
+        commit();
+      }
+    }
     if (ev.key === 'Escape') cancel();
   });
   input.addEventListener('blur', commit);
@@ -1198,13 +1316,34 @@ function openRpsEditor(node, clientX, clientY) {
 
 function setTextStyle(node, style) {
   node.textStyle = style === 'normal' ? undefined : style;
-  recomputeTextOnlyHeight(node);
+  recomputeNodeHeight(node);
   renderAll();
   saveState();
 }
 
 function setTextColor(node, color) {
   node.textColor = color || undefined;
+  renderAll();
+  saveState();
+}
+
+function setFontFamily(node, family) {
+  node.fontFamily = family === 'sans' ? undefined : family;
+  recomputeNodeHeight(node); // a different family measures differently, so the wrap can change
+  renderAll();
+  saveState();
+}
+
+function setTextAlign(node, align) {
+  const isDefault = align === (node.type === 'paragraph' ? 'left' : 'center');
+  node.textAlign = isDefault ? undefined : align;
+  renderAll();
+  saveState();
+}
+
+function setHideIcon(node, hide) {
+  node.hideIcon = hide || undefined;
+  recomputeNodeHeight(node); // the label's available top edge moves with the icon
   renderAll();
   saveState();
 }
@@ -1804,33 +1943,165 @@ function onCanvasClick() {
   renderAll();
 }
 
-// ---------- Manual resize (containers + Image nodes — the only node kinds
-// with a drag-resize handle; every other component's box size comes from
-// its palette definition) ----------
+// ---------- Manual resize ----------
+// Every node kind is drag-resizable from the eight-handle frame diagramming
+// tools use (four corners + four side midpoints), rendered only while the
+// node is the *single* selection. Selection-gating isn't cosmetic: handles
+// necessarily sit inside CONNECT_BORDER_ZONE, so keeping them off unselected
+// nodes leaves the whole border free for drawing connections, which is how
+// you interact with a node you haven't selected yet.
+
+const RESIZE_HANDLE_SIZE = 8;
+const RESIZE_HIT_SIZE = 14;
+// A fingertip needs a bigger target, but eight of them on a 150×70 node would
+// blanket the border (which is also the connect surface) — so touch gets the
+// four corners only, at a size worth tapping.
+const RESIZE_HANDLE_SIZE_TOUCH = 12;
+const RESIZE_HIT_SIZE_TOUCH = 26;
+
+// fx/fy are fractions of the node box, so the same table places handles on
+// any size. `cursor` keys the .resize-cur-* CSS classes.
+const RESIZE_DIRS = [
+  { dir: 'nw', fx: 0, fy: 0, cursor: 'nwse' },
+  { dir: 'n', fx: 0.5, fy: 0, cursor: 'ns' },
+  { dir: 'ne', fx: 1, fy: 0, cursor: 'nesw' },
+  { dir: 'e', fx: 1, fy: 0.5, cursor: 'ew' },
+  { dir: 'se', fx: 1, fy: 1, cursor: 'nwse' },
+  { dir: 's', fx: 0.5, fy: 1, cursor: 'ns' },
+  { dir: 'sw', fx: 0, fy: 1, cursor: 'nesw' },
+  { dir: 'w', fx: 0, fy: 0.5, cursor: 'ew' },
+];
+
+function isCoarsePointer() {
+  return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+}
+
+// Hard floors only. A regular/text node's real height floor is whatever its
+// wrapped label needs — enforced by recomputeNodeHeight() after every resize
+// step rather than here, since it depends on the width being dragged.
+function minResizeSize(n) {
+  if (n.container) return { w: 80, h: 60 };
+  if (n.imageOnly) return { w: 40, h: 40 };
+  return { w: 60, h: 24 };
+}
+
+// Shared by every render*Node function — call it last so the handles paint
+// above the node's own body. `no-export` keeps them out of PNG/SVG exports
+// (export.js strips that class) the same way the drag overlay stays out.
+function appendResizeHandles(g, n) {
+  if (!isNodeSelected(n.id) || state.multiIds.size > 1) return;
+  const coarse = isCoarsePointer();
+  const size = coarse ? RESIZE_HANDLE_SIZE_TOUCH : RESIZE_HANDLE_SIZE;
+  const hit = coarse ? RESIZE_HIT_SIZE_TOUCH : RESIZE_HIT_SIZE;
+  for (const spec of RESIZE_DIRS) {
+    if (coarse && spec.dir.length === 1) continue;
+    const cx = n.w * spec.fx;
+    const cy = n.h * spec.fy;
+    const group = el('g', { class: `resize-handle-group no-export resize-cur-${spec.cursor}` });
+    group.appendChild(el('rect', {
+      class: 'resize-handle',
+      x: cx - size / 2,
+      y: cy - size / 2,
+      width: size,
+      height: size,
+    }));
+    // Transparent, larger, and on top: the grab area is forgiving without
+    // the visible square having to be.
+    group.appendChild(el('rect', {
+      class: 'resize-hit',
+      x: cx - hit / 2,
+      y: cy - hit / 2,
+      width: hit,
+      height: hit,
+    }));
+    group.addEventListener('pointerdown', (ev) => startResizeNode(ev, n, spec.dir));
+    g.appendChild(group);
+  }
+}
 
 let resizeCtx = null;
 
-function startResizeNode(ev, node) {
+function startResizeNode(ev, node, dir) {
   ev.stopPropagation();
   ev.preventDefault();
   selectItem('node', node.id);
   const start = toSVGCoords(ev.clientX, ev.clientY);
-  resizeCtx = { node, offW: node.w - start.x, offH: node.h - start.y };
+  resizeCtx = {
+    node,
+    dir: dir || 'se',
+    startX: start.x,
+    startY: start.y,
+    // Every step is computed from the box as it was at pointerdown, not
+    // incrementally from the previous step, so snapping and the minimum-size
+    // clamp can't accumulate drift over a long drag.
+    origin: { x: node.x, y: node.y, w: node.w, h: node.h },
+  };
   window.addEventListener('pointermove', onResizeMove);
   window.addEventListener('pointerup', onResizeUp);
 }
 
 function onResizeMove(ev) {
   if (!resizeCtx) return;
+  const { node, dir, origin } = resizeCtx;
   const p = toSVGCoords(ev.clientX, ev.clientY);
-  let w = Math.max(80, p.x + resizeCtx.offW);
-  let h = Math.max(60, p.y + resizeCtx.offH);
+  const dx = p.x - resizeCtx.startX;
+  const dy = p.y - resizeCtx.startY;
+  const min = minResizeSize(node);
+
+  // A handle moves only the edges named in its direction — 'w' never touches
+  // height, 'n' never touches width — so the opposite edges stay pinned.
+  const movesW = dir.includes('w');
+  const movesE = dir.includes('e');
+  const movesN = dir.startsWith('n');
+  const movesS = dir.startsWith('s');
+
+  let left = origin.x;
+  let top = origin.y;
+  let right = origin.x + origin.w;
+  let bottom = origin.y + origin.h;
+  if (movesW) left = origin.x + dx;
+  if (movesE) right = origin.x + origin.w + dx;
+  if (movesN) top = origin.y + dy;
+  if (movesS) bottom = origin.y + origin.h + dy;
+
+  // Snap the edges being dragged, not the size — so a resized box lands on
+  // the grid in absolute terms, same as a dragged one. Alt bypasses, exactly
+  // as it does for node drags.
   if (!ev.altKey) {
-    w = snapToGrid(w);
-    h = snapToGrid(h);
+    if (movesW) left = snapToGrid(left);
+    if (movesE) right = snapToGrid(right);
+    if (movesN) top = snapToGrid(top);
+    if (movesS) bottom = snapToGrid(bottom);
   }
-  resizeCtx.node.w = w;
-  resizeCtx.node.h = h;
+
+  let w = Math.max(min.w, right - left);
+  let h = Math.max(min.h, bottom - top);
+
+  // Shift on a corner keeps the box's proportions — mainly for the Image
+  // node, whose aspect ratio is the whole point.
+  if (ev.shiftKey && (movesW || movesE) && (movesN || movesS) && origin.w > 0) {
+    const ratio = origin.h / origin.w;
+    if (h / w > ratio) w = h / ratio;
+    else h = w * ratio;
+    w = Math.max(min.w, w);
+    h = Math.max(min.h, h);
+  }
+
+  node.w = w;
+  node.h = h;
+  node.x = movesW ? right - w : left;
+  node.y = movesN ? bottom - h : top;
+
+  // Width drives label wrapping, so the height has to be re-fitted after
+  // every step. A handle that actually moved the height marks the node
+  // manual, which turns that fit into a floor instead of an assignment (see
+  // recomputeNodeHeight) — otherwise the next label edit would snap a
+  // hand-sized box back to its auto height.
+  if (movesN || movesS) node.manualH = true;
+  recomputeNodeHeight(node);
+  // The re-fit can push the height back up (text no longer fits what was
+  // dragged); keep the edge the user isn't dragging pinned where it was.
+  if (movesN) node.y = bottom - node.h;
   renderAll();
 }
 
@@ -1839,6 +2110,33 @@ function onResizeUp() {
   window.removeEventListener('pointerup', onResizeUp);
   if (resizeCtx) saveState();
   resizeCtx = null;
+}
+
+// Right-click → Reset Size: back to the palette definition's box, with the
+// manual-height flag cleared so the label auto-fit takes over again.
+// The *Silent variant exists for the multi-select version — one render and
+// one history entry for the whole group, same pattern as bringToFrontSilent.
+function resetNodeSize(n) {
+  resetNodeSizeSilent(n);
+  renderAll();
+  saveState();
+}
+
+function resetNodeSizeSilent(n) {
+  const def = getComponent(n.type) || {};
+  n.w = def.w || DEFAULT_NODE_W;
+  n.h = def.h || DEFAULT_NODE_H;
+  n.manualH = undefined;
+  if (n.imageOnly) {
+    // An image's "correct" size is its own aspect ratio, not a palette
+    // default — re-run the one-shot fit that a fresh upload gets.
+    if (n.imageSrc) {
+      n.imageSizedOnce = false;
+      recomputeImageNodeSize(n, n.imageSrc);
+    }
+  } else {
+    recomputeNodeHeight(n);
+  }
 }
 
 // ---------- Edge creation via handles ----------
@@ -2474,11 +2772,17 @@ function buildNodeMenuItems(n, menuX, menuY) {
         label: 'Reset to Default Icon',
         action: () => {
           n.customIcon = undefined;
+          recomputeNodeHeight(n);
           renderAll();
           saveState();
         },
       });
     }
+    iconItems.push('-');
+    iconItems.push({
+      label: n.hideIcon ? 'Show Icon' : 'Hide Icon',
+      action: () => setHideIcon(n, !n.hideIcon),
+    });
     items.push('-');
     items.push({ label: 'Icon', submenu: iconItems });
   }
@@ -2491,13 +2795,29 @@ function buildNodeMenuItems(n, menuX, menuY) {
       };
     });
     textStyleItems.push('-');
+    textStyleItems.push({
+      label: 'Font',
+      submenu: Object.keys(FONT_LABELS).map((family) => ({
+        label: ((n.fontFamily || 'sans') === family ? '✓ ' : '   ') + FONT_LABELS[family],
+        action: () => setFontFamily(n, family),
+      })),
+    });
+    textStyleItems.push({
+      label: 'Align',
+      submenu: Object.keys(TEXT_ALIGN_LABELS).map((align) => ({
+        label: (nodeTextAlign(n) === align ? '✓ ' : '   ') + TEXT_ALIGN_LABELS[align],
+        action: () => setTextAlign(n, align),
+      })),
+    });
+    textStyleItems.push('-');
     textStyleItems.push({ label: 'Text Color…', action: () => openTextColorPanel(n, menuX, menuY) });
     items.push('-');
     items.push({ label: 'Text Style', submenu: textStyleItems });
   }
-  // Note keeps a real box (see isNote in renderRegularNode) even though
-  // it's also textOnly, so — unlike plain Text — it still gets Box Color.
-  if (!n.textOnly || n.type === 'note') {
+  // Note keeps a real box (see isNote in renderRegularNode) even though it's
+  // also textOnly, so — unlike plain Text — it still gets Box Color; a
+  // Paragraph gets it too, so it can be given a callout background.
+  if (!n.textOnly || n.type === 'note' || n.type === 'paragraph') {
     const boxColorItems = [
       { label: 'Fill…', action: () => openBoxFillColorPanel(n, menuX, menuY) },
       { label: 'Border…', action: () => openBoxBorderColorPanel(n, menuX, menuY) },
@@ -2541,6 +2861,7 @@ function buildNodeMenuItems(n, menuX, menuY) {
     items.push({ label: 'Simulation', submenu: simItems });
   }
   items.push('-');
+  items.push({ label: 'Reset Size', action: () => resetNodeSize(n) });
   items.push({ label: 'Bring to Front    ]', action: () => bringToFront(n.id) });
   items.push({ label: 'Send to Back    [', action: () => sendToBack(n.id) });
   items.push('-');
@@ -2555,6 +2876,17 @@ function buildMultiSelectMenuItems() {
     { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
     { label: 'Copy    ⌘C', action: () => copySelectedNode() },
     '-',
+    {
+      label: 'Reset Size',
+      action: () => {
+        for (const id of state.multiIds) {
+          const n = state.nodes.find((x) => x.id === id);
+          if (n) resetNodeSizeSilent(n);
+        }
+        renderAll();
+        saveState();
+      },
+    },
     {
       label: 'Bring to Front    ]',
       action: () => {

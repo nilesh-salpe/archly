@@ -253,6 +253,7 @@ const ICONS = {
   group: `<rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke-dasharray="3 2"/>`,
   note: `<path d="M5 3.5h11l3 3v14H5z"/><path d="M16 3.5v3h3" fill="none"/><path d="M8 10h8M8 13h8M8 16h5"/>`,
   text: `<path d="M5 5h14M12 5v14M9 19h6" fill="none"/>`,
+  paragraph: `<path d="M4 5h16M4 9h16M4 13h16M4 17h10" fill="none"/>`,
   image: `<rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4 16l5-5 3.5 3.5L16 11l4 5" fill="none"/>`,
 };
 
@@ -370,6 +371,11 @@ const COMPONENTS = [
   // transparent body (isNote check in renderRegularNode, canvas.js).
   { id: 'note', category: 'general', label: 'Note', icon: 'note', textOnly: true, w: 200, h: 100 },
   { id: 'text', category: 'general', label: 'Text', icon: 'text', textOnly: true, w: 140, h: 44 },
+  // Paragraph is the Text tool's long-form sibling: same textOnly plumbing
+  // (multi-line textarea editor, auto-growing height), but left-aligned by
+  // default (see nodeTextAlign in canvas.js) and wide enough to hold real
+  // prose, with a resize handle so the wrap width is the user's to set.
+  { id: 'paragraph', category: 'general', label: 'Paragraph', defaultLabel: 'Paragraph text. Press Enter for a new line while editing, and right-click for style, font, color, and alignment.', icon: 'paragraph', textOnly: true, w: 360, h: 96 },
   { id: 'image', category: 'general', label: 'Image', icon: 'image', imageOnly: true, w: 220, h: 150 },
 ];
 

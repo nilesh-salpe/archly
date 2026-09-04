@@ -544,11 +544,25 @@ body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance
   pointer-events: none;
 }
 
+/* The eight-handle resize frame (canvas.js appendResizeHandles), shown on the
+   single-selected node. Each handle is a visible square plus a larger
+   transparent hit rect on top of it, wrapped in a group — so the hover
+   highlight has to key off the group, since the hit rect covers the square. */
 .resize-handle {
-  fill: #94a3b8;
-  cursor: nwse-resize;
+  fill: #ffffff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
 }
-.resize-handle:hover { fill: var(--accent); }
+.resize-hit {
+  fill: transparent;
+  stroke: none;
+}
+.resize-handle-group:hover .resize-handle { fill: var(--accent); }
+
+.resize-cur-nwse { cursor: nwse-resize; }
+.resize-cur-nesw { cursor: nesw-resize; }
+.resize-cur-ns { cursor: ns-resize; }
+.resize-cur-ew { cursor: ew-resize; }
 
 .node-body {
   stroke-width: 2;
@@ -1259,22 +1273,15 @@ body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
   }
 }
 
-/* Touch targets sized for a mouse cursor (10px resize handle, 12px-wide
-   endpoint circle) are too small for a fingertip — bump them for any
-   coarse (touch) pointer regardless of viewport width, so a touchscreen
-   laptop with a mouse alongside it isn't affected. width/height/r are SVG
-   presentation attributes, which modern browsers let CSS override even
-   though canvas.js sets them inline as element attributes at render time.
-   The resize handle's x/y stay anchored at the node's original corner
-   inset (unaffected by this), so the larger box overhangs the corner
-   slightly rather than staying perfectly flush — a normal tradeoff for a
-   bigger grab target, and harmless since it's still a resize affordance,
-   not something requiring pixel-precise placement. */
+/* Touch targets sized for a mouse cursor (12px-wide endpoint circle) are too
+   small for a fingertip — bump them for any coarse (touch) pointer regardless
+   of viewport width, so a touchscreen laptop with a mouse alongside it isn't
+   affected. `r` is an SVG presentation attribute, which modern browsers let
+   CSS override even though canvas.js sets it inline as an element attribute
+   at render time. The resize handles are *not* bumped here: they'd shift off
+   their computed centers, so appendResizeHandles sizes (and thins out) them
+   in JS from the same (pointer: coarse) query instead. */
 @media (pointer: coarse) {
-  .resize-handle {
-    width: 20px;
-    height: 20px;
-  }
   .edge-endpoint-handle {
     r: 12px;
   }

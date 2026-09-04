@@ -120,6 +120,10 @@ function parseYAML(text) {
 
 function ymlNeedsQuoting(str) {
   if (str === '') return true;
+  // A newline (or tab) in a scalar — labels are multi-line now — has to be
+  // written double-quoted so JSON.stringify escapes it; emitting it raw would
+  // split the value across lines and corrupt the document.
+  if (/[\n\r\t]/.test(str)) return true;
   if (/^\s|\s$/.test(str)) return true;
   if (/^(true|false|null|~)$/i.test(str)) return true;
   if (/^-?\d+(\.\d+)?$/.test(str)) return true;

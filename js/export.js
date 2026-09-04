@@ -246,6 +246,12 @@ function diagramToYAMLObject() {
       if (typeof n.rps === 'number') obj.rps = n.rps;
       if (n.textStyle) obj.textStyle = n.textStyle;
       if (n.textColor) obj.textColor = n.textColor;
+      if (n.fontFamily) obj.fontFamily = n.fontFamily;
+      if (n.textAlign) obj.textAlign = n.textAlign;
+      if (n.hideIcon) obj.hideIcon = true;
+      // Without this a hand-resized height would be undone by the load-time
+      // refitAllNodeHeights() pass, which re-derives h from the label.
+      if (n.manualH) obj.manualH = true;
       if (n.fillColor) obj.fillColor = n.fillColor;
       if (n.strokeColor) obj.strokeColor = n.strokeColor;
       if (n.imageSrc) obj.imageSrc = n.imageSrc;
@@ -327,6 +333,10 @@ function importYAMLFile(file) {
         rps: typeof spec.rps === 'number' ? spec.rps : undefined,
         textStyle: typeof spec.textStyle === 'string' ? spec.textStyle : undefined,
         textColor: typeof spec.textColor === 'string' ? spec.textColor : undefined,
+        fontFamily: typeof spec.fontFamily === 'string' ? spec.fontFamily : undefined,
+        textAlign: typeof spec.textAlign === 'string' ? spec.textAlign : undefined,
+        hideIcon: spec.hideIcon === true ? true : undefined,
+        manualH: spec.manualH === true ? true : undefined,
         fillColor: typeof spec.fillColor === 'string' ? spec.fillColor : undefined,
         strokeColor: typeof spec.strokeColor === 'string' ? spec.strokeColor : undefined,
         imageSrc: typeof spec.imageSrc === 'string' ? spec.imageSrc : undefined,

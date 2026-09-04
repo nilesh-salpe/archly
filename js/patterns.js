@@ -25,7 +25,7 @@ const PATTERN_FILES = [
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '32';
+const ASSET_VERSION = '34';
 
 let PATTERNS = [];
 
@@ -111,6 +111,12 @@ function loadPattern(id) {
       rps: typeof spec.rps === 'number' ? spec.rps : undefined,
       textStyle: typeof spec.textStyle === 'string' ? spec.textStyle : undefined,
       textColor: typeof spec.textColor === 'string' ? spec.textColor : undefined,
+      fontFamily: typeof spec.fontFamily === 'string' ? spec.fontFamily : undefined,
+      textAlign: typeof spec.textAlign === 'string' ? spec.textAlign : undefined,
+      hideIcon: spec.hideIcon === true ? true : undefined,
+      // Lets a pattern pin a box taller than its label needs — otherwise the
+      // load-time refitAllNodeHeights() pass would shrink it back.
+      manualH: spec.manualH === true ? true : undefined,
     };
     idMap[spec.id] = nid;
     nodes.push(node);

@@ -276,7 +276,8 @@ function buildHelpPanel() {
   panel.innerHTML = `
     <h4>Canvas</h4>
     <dl>
-      <dt>drag</dt><dd>Move a node, or resize a container from its corner handle</dd>
+      <dt>drag</dt><dd>Move a node</dd>
+      <dt>drag a handle</dt><dd>Resize the selected node from any of its eight handles (Shift on a corner keeps the proportions)</dd>
       <dt>drag near an edge</dt><dd>Draw a flow arrow from that exact point — any point on the border, not fixed dots</dd>
       <dt>drag a line</dt><dd>Move its bend — a curve's one bend point, or an orthogonal arrow's middle segment</dd>
       <dt>double-click a line</dt><dd>Orthogonal: add an extra elbow there. Curve: remove its bend</dd>
