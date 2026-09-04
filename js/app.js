@@ -206,19 +206,36 @@ function buildPatternPanel() {
   });
   panel.appendChild(emptyRow);
 
-  for (const p of PATTERNS) {
-    const row = document.createElement('div');
-    row.className = 'pattern-panel-item';
-    row.appendChild(buildPatternThumbnail(p));
-    const label = document.createElement('span');
-    label.textContent = p.name;
-    row.appendChild(label);
-    row.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      hidePatternPanel();
-      loadPattern(p.id);
-    });
-    panel.appendChild(row);
+  // Two kinds of starting point, and the list is long enough now that mixing
+  // them makes both harder to find: reusable architecture patterns, and the
+  // system-design interview questions (whose ids are listed in
+  // INTERVIEW_PATTERN_IDS — they're a curated set, not everything that
+  // happens to be added later).
+  const groups = [
+    { title: 'Architecture patterns', items: PATTERNS.filter((p) => !INTERVIEW_PATTERN_IDS.includes(p.id)) },
+    { title: 'System design interviews', items: PATTERNS.filter((p) => INTERVIEW_PATTERN_IDS.includes(p.id)) },
+  ];
+
+  for (const group of groups) {
+    if (!group.items.length) continue;
+    const heading = document.createElement('div');
+    heading.className = 'pattern-panel-heading';
+    heading.textContent = group.title;
+    panel.appendChild(heading);
+    for (const p of group.items) {
+      const row = document.createElement('div');
+      row.className = 'pattern-panel-item';
+      row.appendChild(buildPatternThumbnail(p));
+      const label = document.createElement('span');
+      label.textContent = p.name;
+      row.appendChild(label);
+      row.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        hidePatternPanel();
+        loadPattern(p.id);
+      });
+      panel.appendChild(row);
+    }
   }
   return panel;
 }
@@ -242,7 +259,14 @@ function togglePatternPanel(ev) {
 // A handful of quick-start shortcuts shown on the empty canvas — the most
 // commonly reached-for patterns, not the full library (that's what the
 // Patterns ▾ dropdown is for).
-const QUICK_START_PATTERN_IDS = ['3tier', 'microservices', 'rag'];
+const QUICK_START_PATTERN_IDS = ['3tier', 'microservices', 'url-shortener', 'news-feed'];
+
+// The system-design interview set, kept apart from the architecture patterns
+// in the picker (see buildPatternPanel).
+const INTERVIEW_PATTERN_IDS = [
+  'url-shortener', 'news-feed', 'chat', 'video-streaming', 'ride-hailing',
+  'file-storage', 'web-crawler', 'notifications', 'rate-limiter', 'typeahead',
+];
 
 function buildEmptyStateShortcuts() {
   const wrap = document.getElementById('empty-state-patterns');

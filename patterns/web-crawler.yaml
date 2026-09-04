@@ -1,0 +1,79 @@
+id: web-crawler
+name: Web Crawler & Indexer
+title: "Web Crawler & Search Indexer"
+nodes:
+  - id: scheduler
+    type: scheduler
+    x: 60
+    y: 130
+    label: Seed Scheduler
+  - id: frontier
+    type: queue
+    x: 320
+    y: 130
+    label: URL Frontier
+  - id: fetcher
+    type: worker
+    x: 580
+    y: 130
+    label: Fetcher
+  - id: parser
+    type: parser
+    x: 840
+    y: 130
+  - id: content
+    type: s3
+    x: 1100
+    y: 130
+    label: Content Store
+  - id: web
+    type: externalapi
+    x: 580
+    y: 340
+    label: Websites
+  - id: seen
+    type: redis
+    x: 840
+    y: 340
+    label: Seen URLs (dedupe)
+  - id: indexer
+    type: worker
+    x: 1100
+    y: 340
+    label: Indexer
+  - id: index
+    type: search
+    x: 1360
+    y: 340
+    label: Search Index
+edges:
+  - from: scheduler
+    to: frontier
+    number: 1
+  - from: frontier
+    to: fetcher
+    number: 2
+  - from: fetcher
+    to: web
+    number: 3
+    protocol: HTTP
+  - from: fetcher
+    to: parser
+    number: 4
+  - from: parser
+    to: seen
+    number: 5
+  - from: parser
+    to: content
+    number: 6
+  - from: parser
+    to: frontier
+    number: 7
+    lineStyle: dashed
+    routing: orthogonal
+  - from: content
+    to: indexer
+    number: 8
+  - from: indexer
+    to: index
+    number: 9

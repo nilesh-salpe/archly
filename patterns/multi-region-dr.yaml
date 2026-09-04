@@ -5,63 +5,63 @@ nodes:
   - id: dns
     type: dns
     x: 60
-    y: 320
+    y: 380
     label: Global DNS / Failover
   - id: regionA
     type: region
     x: 320
     y: 60
-    w: 640
-    h: 520
+    w: 800
+    h: 280
     label: "Region: Primary (us-east)"
   - id: azA
     type: az
     x: 360
     y: 130
-    w: 360
-    h: 420
+    w: 720
+    h: 180
     label: AZ 1
   - id: elbA
     type: elb
     x: 400
-    y: 250
+    y: 170
   - id: instanceA
     type: instance
-    x: 560
-    y: 250
+    x: 640
+    y: 170
     label: App
   - id: sqldbA
     type: sqldb
-    x: 560
-    y: 400
+    x: 880
+    y: 170
     label: Primary DB
   - id: regionB
     type: region
-    x: 1040
-    y: 60
-    w: 640
-    h: 520
+    x: 320
+    y: 480
+    w: 800
+    h: 280
     label: "Region: Secondary (DR)"
   - id: azB
     type: az
-    x: 1080
-    y: 130
-    w: 360
-    h: 420
+    x: 360
+    y: 550
+    w: 720
+    h: 180
     label: AZ 1
   - id: elbB
     type: elb
-    x: 1120
-    y: 250
+    x: 400
+    y: 590
   - id: instanceB
     type: instance
-    x: 1280
-    y: 250
+    x: 640
+    y: 590
     label: App (standby)
   - id: sqldbB
     type: sqldb
-    x: 1280
-    y: 400
+    x: 880
+    y: 590
     label: Replica DB
 edges:
   - from: dns
@@ -81,6 +81,7 @@ edges:
     to: sqldbB
     number: 5
     lineStyle: dashed
+    protocol: replication
   - from: elbB
     to: instanceB
     number: 6

@@ -1,0 +1,74 @@
+id: rate-limiter
+name: API Rate Limiter
+title: "API Rate Limiter (Token Bucket)"
+nodes:
+  - id: limiter
+    type: ratelimiter
+    x: 580
+    y: 130
+    label: Rate Limiter
+  - id: counters
+    type: redis
+    x: 840
+    y: 130
+    label: Counter Store
+  - id: clients
+    type: user
+    x: 60
+    y: 340
+    label: Clients
+  - id: elb
+    type: elb
+    x: 320
+    y: 340
+  - id: apigw
+    type: apigw
+    x: 580
+    y: 340
+  - id: service
+    type: microservice
+    x: 840
+    y: 340
+    label: Upstream Service
+  - id: config
+    type: nosqldb
+    x: 1100
+    y: 130
+    label: Limit Config
+  - id: metrics
+    type: metrics
+    x: 840
+    y: 550
+    label: Metrics
+  - id: alerts
+    type: alerts
+    x: 1100
+    y: 550
+edges:
+  - from: clients
+    to: elb
+    number: 1
+  - from: elb
+    to: apigw
+    number: 2
+  - from: apigw
+    to: limiter
+    number: 3
+  - from: limiter
+    to: counters
+    number: 4
+  - from: counters
+    to: config
+    number: 5
+    lineStyle: dashed
+  - from: apigw
+    to: service
+    number: 6
+    protocol: allowed
+  - from: apigw
+    to: metrics
+    number: 7
+    arrowStyle: none
+  - from: metrics
+    to: alerts
+    number: 8

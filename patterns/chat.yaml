@@ -1,0 +1,74 @@
+id: chat
+name: Chat / Messaging
+title: "Chat & Messaging (WhatsApp-style)"
+nodes:
+  - id: presence
+    type: redis
+    x: 580
+    y: 130
+    label: Presence / Session
+  - id: msgqueue
+    type: kafka
+    x: 840
+    y: 130
+    label: Message Queue
+  - id: pushworker
+    type: worker
+    x: 1100
+    y: 130
+    label: Push Worker
+  - id: pushprovider
+    type: externalapi
+    x: 1360
+    y: 130
+    label: APNs / FCM
+  - id: client
+    type: mobileapp
+    x: 60
+    y: 340
+    label: Mobile Client
+  - id: elb
+    type: elb
+    x: 320
+    y: 340
+  - id: gateway
+    type: websocket
+    x: 580
+    y: 340
+    label: WebSocket Gateway
+  - id: chatsvc
+    type: microservice
+    x: 840
+    y: 340
+    label: Chat Service
+  - id: msgstore
+    type: cassandra
+    x: 1100
+    y: 340
+    label: Message Store
+edges:
+  - from: client
+    to: elb
+    number: 1
+    protocol: WSS
+  - from: elb
+    to: gateway
+    number: 2
+  - from: gateway
+    to: presence
+    number: 3
+  - from: gateway
+    to: chatsvc
+    number: 4
+  - from: chatsvc
+    to: msgstore
+    number: 5
+  - from: chatsvc
+    to: msgqueue
+    number: 6
+  - from: msgqueue
+    to: pushworker
+    number: 7
+  - from: pushworker
+    to: pushprovider
+    number: 8

@@ -1,0 +1,73 @@
+id: file-storage
+name: File Storage & Sync
+title: "File Storage & Sync (Dropbox-style)"
+nodes:
+  - id: chunker
+    type: microservice
+    x: 580
+    y: 130
+    label: Chunker / Dedupe
+  - id: metadb
+    type: sqldb
+    x: 840
+    y: 130
+    label: Metadata DB
+  - id: client
+    type: user
+    x: 60
+    y: 340
+    label: Desktop Sync Client
+  - id: elb
+    type: elb
+    x: 320
+    y: 340
+  - id: api
+    type: apiservice
+    x: 580
+    y: 340
+    label: Metadata API
+  - id: blocks
+    type: s3
+    x: 840
+    y: 340
+    label: Block Store
+  - id: cdn
+    type: cdn
+    x: 1100
+    y: 340
+    label: CDN (downloads)
+  - id: syncq
+    type: queue
+    x: 840
+    y: 550
+    label: Sync Queue
+  - id: notifier
+    type: worker
+    x: 1100
+    y: 550
+    label: Sync Notifier
+edges:
+  - from: client
+    to: elb
+    number: 1
+  - from: elb
+    to: api
+    number: 2
+  - from: api
+    to: chunker
+    number: 3
+  - from: chunker
+    to: metadb
+    number: 4
+  - from: api
+    to: blocks
+    number: 5
+  - from: blocks
+    to: cdn
+    number: 6
+  - from: api
+    to: syncq
+    number: 7
+  - from: syncq
+    to: notifier
+    number: 8

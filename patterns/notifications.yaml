@@ -1,0 +1,90 @@
+id: notifications
+name: Notification System
+title: "Notification System (Email / Push / SMS)"
+nodes:
+  - id: prefs
+    type: sqldb
+    x: 320
+    y: 130
+    label: Prefs & Templates
+  - id: throttle
+    type: ratelimiter
+    x: 580
+    y: 130
+    label: Throttling
+  - id: emailworker
+    type: worker
+    x: 840
+    y: 130
+    label: Email Worker
+  - id: emailprovider
+    type: email
+    x: 1100
+    y: 130
+    label: Email Provider
+  - id: producer
+    type: microservice
+    x: 60
+    y: 340
+    label: Producer Service
+  - id: api
+    type: apiservice
+    x: 320
+    y: 340
+    label: Notification API
+  - id: queue
+    type: kafka
+    x: 580
+    y: 340
+    label: Notification Queue
+  - id: pushworker
+    type: worker
+    x: 840
+    y: 340
+    label: Push Worker
+  - id: pushprovider
+    type: externalapi
+    x: 1100
+    y: 340
+    label: APNs / FCM
+  - id: smsworker
+    type: worker
+    x: 840
+    y: 550
+    label: SMS Worker
+  - id: smsprovider
+    type: externalapi
+    x: 1100
+    y: 550
+    label: SMS Gateway
+edges:
+  - from: producer
+    to: api
+    number: 1
+  - from: api
+    to: prefs
+    number: 2
+  - from: api
+    to: throttle
+    number: 3
+  - from: throttle
+    to: queue
+    number: 4
+  - from: queue
+    to: emailworker
+    number: 5
+  - from: queue
+    to: pushworker
+    number: 5
+  - from: queue
+    to: smsworker
+    number: 5
+  - from: emailworker
+    to: emailprovider
+    number: 6
+  - from: pushworker
+    to: pushprovider
+    number: 6
+  - from: smsworker
+    to: smsprovider
+    number: 6

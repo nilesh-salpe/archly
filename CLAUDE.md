@@ -336,8 +336,26 @@ exports).
   (`loadPatternDefinitions`, awaited before the palette/pattern-picker build
   in `js/app.js`). `PATTERN_FILES` is a hardcoded filename list (no directory
   listing on static hosting). Adding a pattern = add a YAML file here + one
-  line in `PATTERN_FILES`. 14 patterns ship today (see `patterns/`); the
-  toolbar's Patterns ▾ button (`buildPatternPanel`/`buildPatternThumbnail` in
+  line in `PATTERN_FILES`. 24 patterns ship today (see `patterns/`), in two
+  sets: the reusable architecture patterns, and the ten system-design
+  interview classics (URL shortener, news feed, chat, video streaming, ride
+  hailing, file storage, web crawler, notifications, rate limiter,
+  typeahead) whose ids are listed in `INTERVIEW_PATTERN_IDS` (`js/app.js`) so
+  the picker can group them under their own heading — with 24 entries a flat
+  list buried both halves.
+  - **Layout convention** (every pattern follows it, and
+    `node tools/check-patterns.js` enforces it): columns at x = 60, 320, 580,
+    840, 1100, 1360…, rows at y = 130, 340, 550…, everything on the canvas's
+    own 10px grid. The checker reuses `yaml.js` + `arrows.js`, so it measures
+    the route the canvas actually draws, and reports nodes off-grid, boxes
+    that nearly-but-don't align, boxes closer than 20px, arrows crossing a
+    box, and arrows crossing each other. All 24 patterns are clean; keep them
+    that way rather than eyeballing a new one. Note the title label a pattern
+    renders sits at `minY - 90`, so leave the band just above the first row
+    free — a feedback-loop arrow routed up there collides with it (the web
+    crawler's does exactly that if you hand-place waypoints instead of
+    letting the auto-router handle it).
+  The toolbar's Patterns ▾ button (`buildPatternPanel`/`buildPatternThumbnail` in
   `js/app.js`) renders each as a small colored-rect thumbnail generated
   straight from the pattern's node positions — no extra per-pattern asset
   needed.

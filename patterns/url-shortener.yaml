@@ -1,0 +1,75 @@
+id: url-shortener
+name: URL Shortener
+title: "URL Shortener (TinyURL / bit.ly)"
+nodes:
+  - id: ratelimiter
+    type: ratelimiter
+    x: 320
+    y: 130
+    label: Rate Limiter
+  - id: keygen
+    type: microservice
+    x: 580
+    y: 130
+    label: Key Generator
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: elb
+    type: elb
+    x: 320
+    y: 340
+  - id: api
+    type: apiservice
+    x: 580
+    y: 340
+    label: Shortener API
+  - id: cache
+    type: redis
+    x: 840
+    y: 340
+    label: URL Cache
+  - id: store
+    type: nosqldb
+    x: 1100
+    y: 340
+    label: URL Store (KV)
+  - id: clicks
+    type: kafka
+    x: 840
+    y: 550
+    label: Click Events
+  - id: analytics
+    type: streamprocessor
+    x: 1100
+    y: 550
+    label: Analytics
+edges:
+  - from: user
+    to: elb
+    number: 1
+    protocol: HTTPS
+  - from: elb
+    to: ratelimiter
+    number: 2
+  - from: elb
+    to: api
+    number: 3
+  - from: api
+    to: keygen
+    number: 4
+  - from: api
+    to: cache
+    number: 5
+  - from: cache
+    to: store
+    number: 6
+    lineStyle: dashed
+  - from: api
+    to: clicks
+    number: 7
+    arrowStyle: none
+  - from: clicks
+    to: analytics
+    number: 8

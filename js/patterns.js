@@ -21,11 +21,23 @@ const PATTERN_FILES = [
   'saga.yaml',
   'multi-agent.yaml',
   'secure-api.yaml',
+  // System-design interview classics — the questions that actually get asked,
+  // as opposed to the architecture patterns above.
+  'url-shortener.yaml',
+  'news-feed.yaml',
+  'chat.yaml',
+  'video-streaming.yaml',
+  'ride-hailing.yaml',
+  'file-storage.yaml',
+  'web-crawler.yaml',
+  'notifications.yaml',
+  'rate-limiter.yaml',
+  'typeahead.yaml',
 ];
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '40';
+const ASSET_VERSION = '42';
 
 let PATTERNS = [];
 

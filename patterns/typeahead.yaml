@@ -1,0 +1,69 @@
+id: typeahead
+name: Search Autocomplete
+title: "Search Autocomplete (Typeahead)"
+nodes:
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: elb
+    type: elb
+    x: 320
+    y: 340
+  - id: api
+    type: apiservice
+    x: 580
+    y: 340
+    label: Suggestion API
+  - id: triecache
+    type: redis
+    x: 840
+    y: 340
+    label: Trie Cache
+  - id: triestore
+    type: nosqldb
+    x: 1100
+    y: 340
+    label: Trie Store
+  - id: querylog
+    type: kafka
+    x: 580
+    y: 550
+    label: Query Log Stream
+  - id: aggregator
+    type: streamprocessor
+    x: 840
+    y: 550
+    label: Aggregator
+  - id: builder
+    type: batch
+    x: 1100
+    y: 550
+    label: Trie Builder
+edges:
+  - from: user
+    to: elb
+    number: 1
+  - from: elb
+    to: api
+    number: 2
+  - from: api
+    to: triecache
+    number: 3
+  - from: triecache
+    to: triestore
+    number: 4
+    lineStyle: dashed
+  - from: api
+    to: querylog
+    number: 5
+    arrowStyle: none
+  - from: querylog
+    to: aggregator
+    number: 6
+  - from: aggregator
+    to: builder
+    number: 7
+  - from: builder
+    to: triestore
+    number: 8

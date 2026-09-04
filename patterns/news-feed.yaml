@@ -1,0 +1,80 @@
+id: news-feed
+name: Social News Feed
+title: "Social News Feed (Fan-Out on Write)"
+nodes:
+  - id: cdn
+    type: cdn
+    x: 60
+    y: 130
+    label: CDN (media)
+  - id: postsvc
+    type: microservice
+    x: 580
+    y: 130
+    label: Post Service
+  - id: fanoutq
+    type: kafka
+    x: 840
+    y: 130
+    label: Fan-Out Queue
+  - id: fanoutworker
+    type: worker
+    x: 1100
+    y: 130
+    label: Fan-Out Worker
+  - id: user
+    type: user
+    x: 60
+    y: 340
+  - id: apigw
+    type: apigw
+    x: 320
+    y: 340
+  - id: poststore
+    type: cassandra
+    x: 840
+    y: 340
+    label: Post Store
+  - id: feedsvc
+    type: microservice
+    x: 580
+    y: 550
+    label: Feed Service
+  - id: feedcache
+    type: redis
+    x: 1100
+    y: 550
+    label: Feed Cache
+edges:
+  - from: user
+    to: cdn
+    number: 1
+    lineStyle: dashed
+  - from: user
+    to: apigw
+    number: 2
+  - from: apigw
+    to: postsvc
+    number: 3
+  - from: postsvc
+    to: poststore
+    number: 4
+  - from: postsvc
+    to: fanoutq
+    number: 5
+  - from: fanoutq
+    to: fanoutworker
+    number: 6
+  - from: fanoutworker
+    to: feedcache
+    number: 7
+  - from: apigw
+    to: feedsvc
+    number: 8
+  - from: feedsvc
+    to: feedcache
+    number: 9
+  - from: feedsvc
+    to: poststore
+    number: 10
+    lineStyle: dashed

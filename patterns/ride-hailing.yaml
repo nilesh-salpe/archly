@@ -1,0 +1,84 @@
+id: ride-hailing
+name: Ride Hailing
+title: "Ride Hailing (Uber-style Matching)"
+nodes:
+  - id: rider
+    type: mobileapp
+    x: 60
+    y: 130
+    label: Rider App
+  - id: tripsvc
+    type: microservice
+    x: 580
+    y: 130
+    label: Trip Service
+  - id: matching
+    type: microservice
+    x: 840
+    y: 130
+    label: Matching Service
+  - id: tripstore
+    type: cassandra
+    x: 1100
+    y: 130
+    label: Trip Store
+  - id: apigw
+    type: apigw
+    x: 320
+    y: 340
+  - id: events
+    type: kafka
+    x: 1100
+    y: 340
+    label: Event Stream
+  - id: pricing
+    type: worker
+    x: 1360
+    y: 340
+    label: Pricing / ETA
+  - id: driver
+    type: mobileapp
+    x: 60
+    y: 550
+    label: Driver App
+  - id: locationsvc
+    type: microservice
+    x: 580
+    y: 550
+    label: Location Service
+  - id: geo
+    type: redis
+    x: 840
+    y: 550
+    label: Geo Index
+edges:
+  - from: rider
+    to: apigw
+    number: 1
+  - from: apigw
+    to: tripsvc
+    number: 2
+  - from: tripsvc
+    to: matching
+    number: 3
+  - from: driver
+    to: apigw
+    number: 4
+  - from: apigw
+    to: locationsvc
+    number: 5
+  - from: locationsvc
+    to: geo
+    number: 6
+  - from: matching
+    to: geo
+    number: 7
+  - from: matching
+    to: tripstore
+    number: 8
+  - from: matching
+    to: events
+    number: 9
+  - from: events
+    to: pricing
+    number: 10

@@ -1,0 +1,81 @@
+id: video-streaming
+name: Video Streaming
+title: "Video Streaming (Upload, Transcode, Playback)"
+nodes:
+  - id: uploader
+    type: user
+    x: 60
+    y: 130
+    label: Uploader
+  - id: apigw
+    type: apigw
+    x: 320
+    y: 130
+  - id: raw
+    type: s3
+    x: 580
+    y: 130
+    label: Raw Upload Bucket
+  - id: transcodeq
+    type: queue
+    x: 840
+    y: 130
+    label: Transcode Queue
+  - id: transcoder
+    type: worker
+    x: 1100
+    y: 130
+    label: Transcoder
+  - id: encoded
+    type: s3
+    x: 1100
+    y: 340
+    label: Encoded Segments
+  - id: cdn
+    type: cdn
+    x: 1360
+    y: 340
+  - id: metadata
+    type: nosqldb
+    x: 840
+    y: 550
+    label: Video Metadata
+  - id: playback
+    type: microservice
+    x: 1100
+    y: 550
+    label: Playback API
+  - id: viewer
+    type: user
+    x: 1360
+    y: 550
+    label: Viewer
+edges:
+  - from: uploader
+    to: apigw
+    number: 1
+  - from: apigw
+    to: raw
+    number: 2
+  - from: raw
+    to: transcodeq
+    number: 3
+  - from: transcodeq
+    to: transcoder
+    number: 4
+  - from: transcoder
+    to: encoded
+    number: 5
+  - from: encoded
+    to: cdn
+    number: 6
+  - from: viewer
+    to: playback
+    number: 7
+  - from: playback
+    to: metadata
+    number: 8
+  - from: viewer
+    to: cdn
+    number: 9
+    protocol: HLS

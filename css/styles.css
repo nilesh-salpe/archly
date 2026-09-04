@@ -1068,6 +1068,18 @@ body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
 
 .pattern-panel-item:hover { background: var(--bg); }
 
+/* Group heading inside the picker's two-column grid — spans both columns so
+   the rows below it stay paired up. */
+.pattern-panel-heading {
+  grid-column: 1 / -1;
+  padding: 10px 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .pattern-thumb {
   width: 100%;
   height: 72px;
