@@ -686,17 +686,18 @@ body[data-toolbar-pos='bottom'] .results-panel { bottom: var(--toolbar-clearance
 }
 .edge-waypoint-handle:hover { fill: var(--accent); }
 
-/* The "virtual" handle at each drawn segment's midpoint — not a bend point
-   yet; dragging one creates one there. Deliberately faint so a selected edge
-   doesn't read as covered in dots, and solid on hover so it's obvious which
-   one is about to be grabbed. */
+/* The "add a bend here" dot: one per selected edge, following the pointer
+   along the line and hidden until the pointer is near it (see
+   appendEdgeHandles). Lighter than a real bend handle so the two never read
+   as the same thing, solid on hover so it's clearly grabbable. */
 .edge-virtual-handle {
   fill: var(--accent);
-  stroke: none;
-  opacity: 0.3;
+  stroke: var(--input-bg);
+  stroke-width: 1.5;
+  opacity: 0.55;
   cursor: copy;
 }
-.edge-virtual-handle:hover { opacity: 0.95; }
+.edge-virtual-handle:hover { opacity: 1; }
 
 .edge-badge circle {
   fill: var(--input-bg);

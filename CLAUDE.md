@@ -249,6 +249,41 @@ exports).
     *every drag* added one. What makes them workable now is that adding a
     bend is its own gesture — a virtual handle or a double-click — while a
     drag still only moves what's already there.)
+  - **Automatic avoidance** (arrows.js, `AVOID_MARGIN`/`CHANNEL_STEP`): only
+    ever applies to a route the user hasn't bent by hand — the moment an edge
+    has its own `curve`/`waypoints`/elbow offsets those win outright and none
+    of it runs, so it improves defaults without fighting a deliberate layout.
+    Three parts:
+    - *A direct edge* bows around any box it would cross
+      (`autoAvoidCurveBend`): the needed clearance is doubled, since a
+      quadratic's deviation peaks at half its control offset, then verified
+      against the sampled curve and widened if a box near an endpoint still
+      catches it. The existing same-pair fan-out separation takes priority —
+      a separated arrow is already off the direct line.
+    - *An orthogonal edge* first tries shifting its jog
+      (`autoAvoidElbowOffset`, candidates being the obstacles' own edges,
+      nearest first). When no shift can work — the classic case is a box
+      sitting on the row the two nodes share, where every "Z" is the same
+      straight line through it — `orthogonalDetourPath` leaves the row
+      instead, exiting each box through the face pointing at the detour.
+      That last part matters: an arrow that exits sideways and runs along the
+      row lands on top of the row's other arrows, which is the thing being
+      avoided. Dragging a corner sets an explicit elbow offset, which takes
+      over and restores the plain Z.
+    - *Orthogonal runs sharing a corridor* step apart by `CHANNEL_STEP`
+      (`orthogonalSeparationShift`) — each edge counts the earlier edges (by
+      id, a fixed order, so it never depends on render order) whose jog sits
+      at the same coordinate with an overlapping span. Other edges' channels
+      are read without their own detour applied: an approximation that keeps
+      this pass cheap enough for drag frames. `routeObstacles` also takes a
+      neighbourhood box (`routeBounds`) so each edge only tests nodes it could
+      actually reach — that, not the O(edges²) corridor pass, is what keeps
+      the cost flat as a diagram grows. Measured: ~2ms per full render on the
+      busiest shipped pattern, ~9ms on a deliberately pathological 40-node /
+      60-edge grid (6ms of which is the render itself).
+    Containers and text/notes are never obstacles (`isRouteObstacle`) —
+    containers are backdrops meant to be crossed, and routing around a note
+    would push arrows into detours around something nobody reads as solid.
   - **Rounded corners** (`edge.rounded`, right-click → Routing): draw.io's
     `rounded=1`. `pathFromPoints` is the single `d`-string builder for every
     route, so this applies to orthogonal elbows and direct multi-bend
@@ -444,15 +479,21 @@ exports).
     added and removed, mirroring draw.io: an endpoint handle at each end
     (retarget the edge), a solid `.edge-waypoint-handle` on every real bend
     (drag to move, double-click to remove), and a faint
-    `.edge-virtual-handle` at each position the geometry reports in
-    `geo.virtuals` — dragging one inserts a real bend there and drags it from
-    the first pixel (`startNewWaypointDrag`). A virtual handle that's only
-    *clicked* takes its speculative point back out, so a stray click never
-    leaves a bend behind. `geo.virtuals` comes from arrows.js rather than
-    being computed here because it's shape-dependent: segment midpoints for a
-    polyline, but points at t=0.25/0.75 on a direct edge — the midpoint is
-    where the step-number badge sits, and the badge paints after the handles
-    and would swallow the pointerdown. All the handles are `no-export`.
+    `.edge-virtual-handle` "add a bend here" dot — *one* per edge, hidden
+    until the pointer comes within `EDGE_ADD_HOVER_RADIUS` of the line and
+    then tracking it along the route (projected onto `geo.samples`, the
+    polyline that follows the *drawn* path — a quadratic's control point
+    isn't on its own curve, so the arc is sampled). Dragging it inserts a
+    real bend there and drags it from the first pixel
+    (`startNewWaypointDrag`); a dot that's only *clicked* takes its
+    speculative point back out, so a stray click never leaves a bend behind.
+    One hover dot rather than a fixed dot per segment is deliberate: a
+    three-bend route showed nine dots, all of them things to avoid grabbing
+    by accident. The hover listeners sit on the whole edge `<g>`, not on the
+    line's hit path — the dot lives inside that group, so moving onto the dot
+    doesn't count as leaving the edge and can't start a show/hide flicker
+    loop. It hides near a bend handle or the step badge, which paint over it.
+    All the handles are `no-export`.
   - `onEdgeDoubleClick` does the same add/remove on the line itself, in both
     routing modes: on an existing bend it removes it, otherwise it adds one
     there (a direct edge's single arc is cleared first, since that's the only

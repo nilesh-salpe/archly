@@ -1680,20 +1680,36 @@ function appendEdgeHandles(g, e, geo) {
     g.appendChild(h);
   });
 
-  // Where these belong depends on the route's shape, so the geometry decides
-  // (geo.virtuals) rather than canvas.js assuming segment midpoints — a
-  // quadratic arc's midpoint isn't on any segment of its point list.
-  for (const m of geo.virtuals || []) {
-    // Skip one that would sit under something that already owns those pixels:
-    // a real bend handle (a short jog can put them within a few px of each
-    // other), or the step-number badge, which paints after the handles and
-    // would otherwise swallow the pointerdown.
-    if (bends.some((p) => Math.hypot(p.x - m.x, p.y - m.y) < 12)) continue;
-    if (Math.hypot(geo.badge.x - m.x, geo.badge.y - m.y) < 15) continue;
-    const h = el('circle', { class: 'edge-virtual-handle no-export', cx: m.x, cy: m.y, r: 4 });
-    h.addEventListener('pointerdown', (ev) => startNewWaypointDrag(ev, e, m));
-    g.appendChild(h);
-  }
+  // One "add a bend here" dot, not a row of them: it tracks the pointer along
+  // the line and is hidden until the pointer is actually near the edge. A
+  // fixed dot per segment was clutter — a route with three bends put nine
+  // dots on screen, and every one of them was something to avoid grabbing by
+  // accident.
+  const adder = el('circle', { class: 'edge-virtual-handle no-export', cx: geo.start.x, cy: geo.start.y, r: 5, display: 'none' });
+  adder.addEventListener('pointerdown', (ev) => {
+    startNewWaypointDrag(ev, e, { x: Number(adder.getAttribute('cx')), y: Number(adder.getAttribute('cy')) });
+  });
+  g.appendChild(adder);
+
+  // Listening on the whole edge group (not the line's hit path) matters: the
+  // dot is inside it, so moving onto the dot doesn't count as leaving the
+  // edge and can't start a show/hide flicker loop.
+  g.addEventListener('pointermove', (ev) => {
+    if (waypointDragCtx || elbowDragCtx || curveDragCtx || endpointDragCtx || labelDragCtx) return;
+    const p = toSVGCoords(ev.clientX, ev.clientY);
+    const { point, dist } = closestPointOnPolyline(geo.samples || geo.points, p);
+    const blocked = dist > EDGE_ADD_HOVER_RADIUS
+      || bends.some((b) => Math.hypot(b.x - point.x, b.y - point.y) < 14)
+      || Math.hypot(geo.badge.x - point.x, geo.badge.y - point.y) < 15;
+    if (blocked) {
+      adder.setAttribute('display', 'none');
+      return;
+    }
+    adder.setAttribute('cx', point.x);
+    adder.setAttribute('cy', point.y);
+    adder.setAttribute('display', 'inline');
+  });
+  g.addEventListener('pointerleave', () => adder.setAttribute('display', 'none'));
 }
 
 // The default arrowhead marker (index.html) is shared by every edge and
@@ -2361,6 +2377,8 @@ function onEndpointDragUp(ev) {
 // selects the edge rather than nudging a bend by a pixel.
 
 const EDGE_POINT_GRAB_RADIUS = 10;
+// How near the line the pointer has to be for the "add a bend" dot to appear.
+const EDGE_ADD_HOVER_RADIUS = 16;
 
 function startEdgeBend(ev, edge) {
   ev.stopPropagation();
@@ -2455,7 +2473,7 @@ function onLabelDragUp(ev) {
 let elbowDragCtx = null;
 
 function startElbowDrag(ev, edge) {
-  const info = computeOrthogonalCornerBases(edge, state.nodes);
+  const info = computeOrthogonalCornerBases(edge, state.nodes, state.edges);
   if (!info) return;
   const p0 = toSVGCoords(ev.clientX, ev.clientY);
   const d1 = Math.hypot(p0.x - info.c1.x, p0.y - info.c1.y);

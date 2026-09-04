@@ -24,6 +24,11 @@
 // unlike draw.io/Visio/Lucidchart.
 //
 // `edge.rounded` softens every corner of whichever route results.
+//
+// Defaults are also routed around obstacles: a route the user hasn't bent by
+// hand avoids crossing other nodes, and orthogonal runs sharing a corridor
+// step apart instead of stacking. See "Automatic avoidance" below — all of it
+// switches off the moment an edge carries a bend of its own.
 
 function clipPointOnRect(cx, cy, tx, ty, rect) {
   const hw = rect.w / 2;
@@ -35,6 +40,12 @@ function clipPointOnRect(cx, cy, tx, ty, rect) {
   const scaleY = dy !== 0 ? hh / Math.abs(dy) : Infinity;
   const scale = Math.min(scaleX, scaleY);
   return { x: cx + dx * scale, y: cy + dy * scale };
+}
+
+function nodesByIdMap(allNodes) {
+  const byId = {};
+  for (const n of allNodes) byId[n.id] = n;
+  return byId;
 }
 
 function pairKey(a, b) {
@@ -84,6 +95,271 @@ function edgeNormal(start, end) {
   return { nx: -dy / len, ny: dx / len };
 }
 
+// ---------- Automatic avoidance ----------
+// Applies only to a route the user hasn't bent by hand: the moment an edge
+// carries its own curve/waypoints/elbow offsets, those win outright and none
+// of this runs. So it improves defaults without ever fighting a deliberate
+// layout.
+
+const AVOID_MARGIN = 14; // clearance kept around an obstacle box
+const CHANNEL_STEP = 16; // spacing between orthogonal runs sharing a corridor
+
+// Containers are backdrops meant to be crossed, and text/notes aren't solid
+// objects — routing around either would push arrows into odd detours around
+// things nobody reads as obstacles.
+function isRouteObstacle(n) {
+  return !n.container && !n.textOnly;
+}
+
+function rectOf(n, m) {
+  return { x: n.x - m, y: n.y - m, w: n.w + 2 * m, h: n.h + 2 * m };
+}
+
+// Liang–Barsky: does segment a→b touch the rect at all?
+function segmentHitsRect(a, b, r) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const p = [-dx, dx, -dy, dy];
+  const q = [a.x - r.x, r.x + r.w - a.x, a.y - r.y, r.y + r.h - a.y];
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return false; // parallel to this slab and outside it
+    } else {
+      const t = q[i] / p[i];
+      if (p[i] < 0) {
+        if (t > t1) return false;
+        if (t > t0) t0 = t;
+      } else {
+        if (t < t0) return false;
+        if (t < t1) t1 = t;
+      }
+    }
+  }
+  return true;
+}
+
+function polylineHitsRect(points, r) {
+  for (let i = 0; i < points.length - 1; i++) {
+    if (segmentHitsRect(points[i], points[i + 1], r)) return true;
+  }
+  return false;
+}
+
+// Every node that isn't one of this edge's own endpoints. `near` (a
+// {x,y,w,h} box) narrows that to the route's own neighbourhood: a box the
+// route can't come near can't block it, and skipping the rest keeps the
+// per-edge search proportional to local density rather than to diagram size.
+function routeObstacles(edge, allNodes, near) {
+  return allNodes.filter((n) => {
+    if (n.id === edge.from || n.id === edge.to || !isRouteObstacle(n)) return false;
+    if (!near) return true;
+    return n.x < near.x + near.w && n.x + n.w > near.x && n.y < near.y + near.h && n.y + n.h > near.y;
+  });
+}
+
+// The area a route between these two points can reach, with room for the
+// detour it might take.
+function routeBounds(a, b, pad) {
+  const x = Math.min(a.x, b.x) - pad;
+  const y = Math.min(a.y, b.y) - pad;
+  return { x, y, w: Math.abs(a.x - b.x) + pad * 2, h: Math.abs(a.y - b.y) + pad * 2 };
+}
+
+// Samples a quadratic so the curve can be tested (and hit-tested) as a
+// polyline — the control point is off-curve, so testing the control polygon
+// would be both wrong and pessimistic.
+function sampleQuadratic(start, ctrl, end, steps) {
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const u = 1 - t;
+    pts.push({
+      x: u * u * start.x + 2 * u * t * ctrl.x + t * t * end.x,
+      y: u * u * start.y + 2 * u * t * ctrl.y + t * t * end.y,
+    });
+  }
+  return pts;
+}
+
+// How far to bow a direct edge so it clears whatever it would otherwise run
+// through. Returns a control-point offset along the line's normal (0 = leave
+// it straight): the curve's own deviation peaks at half that, so the needed
+// clearance is doubled, then verified against the real sampled curve and
+// widened if a box near an endpoint still catches it.
+function autoAvoidCurveBend(edge, start, end, allNodes) {
+  // A generous pad here, unlike the orthogonal search: a bowed curve leaves
+  // the end-to-end box, so a box just outside it can still be in the way.
+  const blocking = routeObstacles(edge, allNodes, routeBounds(start, end, 140))
+    .filter((n) => segmentHitsRect(start, end, rectOf(n, AVOID_MARGIN)));
+  if (!blocking.length) return 0;
+
+  const { nx, ny } = edgeNormal(start, end);
+  const mx = (start.x + end.x) / 2, my = (start.y + end.y) / 2;
+  let pos = 0, neg = 0;
+  for (const n of blocking) {
+    const r = rectOf(n, AVOID_MARGIN);
+    for (const c of [
+      { x: r.x, y: r.y }, { x: r.x + r.w, y: r.y },
+      { x: r.x, y: r.y + r.h }, { x: r.x + r.w, y: r.y + r.h },
+    ]) {
+      const d = (c.x - mx) * nx + (c.y - my) * ny;
+      if (d > pos) pos = d;
+      if (d < neg) neg = d;
+    }
+  }
+  // Go around whichever side needs the smaller detour.
+  let bend = (Math.abs(pos) <= Math.abs(neg) ? pos : neg) * 2;
+
+  const rects = blocking.map((n) => rectOf(n, 4));
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ctrl = { x: mx + nx * bend, y: my + ny * bend };
+    const curve = sampleQuadratic(start, ctrl, end, 16);
+    if (!rects.some((r) => polylineHitsRect(curve, r))) break;
+    bend *= 1.5;
+  }
+  return bend;
+}
+
+// The elbow shift that gets an orthogonal route out of every box it would
+// otherwise cross. Candidates are the obstacles' own edges (just outside
+// them), tried nearest-first, so the detour is the smallest one that works.
+function autoAvoidElbowOffset(edge, s, t, allNodes) {
+  const { horiz, start, end, mid } = orthogonalDefaultBase(edge, s, t);
+  // A default Z never leaves the box spanned by its two ends, so obstacles
+  // outside it (plus a margin) can't matter.
+  const obstacles = routeObstacles(edge, allNodes, routeBounds(start, end, AVOID_MARGIN));
+  if (!obstacles.length) return 0;
+  const rects = obstacles.map((n) => rectOf(n, 4));
+
+  const pathFor = (m) => (horiz
+    ? [start, { x: m, y: start.y }, { x: m, y: end.y }, end]
+    : [start, { x: start.x, y: m }, { x: end.x, y: m }, end]);
+  const clear = (m) => !rects.some((r) => polylineHitsRect(pathFor(m), r));
+
+  if (clear(mid)) return 0;
+
+  const candidates = [];
+  for (const n of obstacles) {
+    const r = rectOf(n, AVOID_MARGIN);
+    candidates.push(horiz ? r.x : r.y, horiz ? r.x + r.w : r.y + r.h);
+  }
+  candidates.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+  for (const c of candidates) {
+    if (clear(c)) return c - mid;
+  }
+  return 0; // nothing clears it — leave the honest default rather than a wild detour
+}
+
+// Two orthogonal runs sitting at the same coordinate with overlapping spans
+// draw right on top of each other. Each edge counts the *earlier* edges (by
+// id — a fixed order, so the result is stable and never depends on render
+// order) that claim the same channel and steps aside by that many
+// CHANNEL_STEPs. Other edges' channels are read without their own avoidance
+// detour applied: an approximation, but it keeps this O(edges²) pass cheap
+// enough to run on every drag frame.
+function orthogonalChannel(edge, allNodes, useAvoid, lookup) {
+  if (edge.routing !== 'orthogonal') return null;
+  if (Array.isArray(edge.waypoints) && edge.waypoints.length) return null;
+  // The caller passes its node lookup in: this runs once per edge *pair*, and
+  // rebuilding the map here made the pass O(edges² × nodes).
+  const nodesById = lookup || nodesByIdMap(allNodes);
+  const s = nodesById[edge.from];
+  const t = nodesById[edge.to];
+  if (!s || !t) return null;
+  const { horiz, start, end, mid } = orthogonalDefaultBase(edge, s, t);
+  const manual = typeof edge.elbowOffset === 'number' || typeof edge.elbowOffsetEnd === 'number';
+  const auto = manual || !useAvoid ? 0 : autoAvoidElbowOffset(edge, s, t, allNodes);
+  const m1 = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : auto);
+  const m2 = mid + (typeof edge.elbowOffsetEnd === 'number' ? edge.elbowOffsetEnd : auto);
+  if (m1 !== m2) return null; // the two corners have been pulled apart: no single shared run
+  const span = horiz
+    ? [Math.min(start.y, end.y), Math.max(start.y, end.y)]
+    : [Math.min(start.x, end.x), Math.max(start.x, end.x)];
+  return { horiz, m: m1, span };
+}
+
+function orthogonalSeparationShift(edge, allEdges, allNodes) {
+  if (typeof edge.elbowOffset === 'number' || typeof edge.elbowOffsetEnd === 'number') return 0;
+  const lookup = nodesByIdMap(allNodes);
+  const mine = orthogonalChannel(edge, allNodes, true, lookup);
+  if (!mine) return 0;
+  let count = 0;
+  for (const other of allEdges) {
+    if (other.id >= edge.id) continue;
+    const oc = orthogonalChannel(other, allNodes, false, lookup);
+    if (!oc || oc.horiz !== mine.horiz) continue;
+    if (Math.abs(oc.m - mine.m) > CHANNEL_STEP / 2) continue;
+    if (mine.span[1] < oc.span[0] || oc.span[1] < mine.span[0]) continue;
+    count++;
+  }
+  return count * CHANNEL_STEP;
+}
+
+// When no elbow position clears the obstacles — the classic case being a box
+// sitting directly between two nodes on the same row, where every "Z" is the
+// same straight line through it — the route has to leave the row entirely.
+//
+// The good version of that leaves each box through the face pointing at the
+// detour (over the top, say) rather than out the side and along the row: an
+// arrow that exits sideways runs straight down the same corridor as the row's
+// other arrows and lands on top of them, which is exactly what this is
+// supposed to prevent. Corners are expressed in (along, cross) coordinates so
+// one body of code covers both orientations.
+function orthogonalDetourPath(edge, s, t, allNodes) {
+  const { horiz, start, end } = orthogonalDefaultBase(edge, s, t);
+  // A detour deliberately leaves the end-to-end box on the cross axis, so it
+  // needs a wider net than the Z's own bounds.
+  const obstacles = routeObstacles(edge, allNodes, routeBounds(start, end, 400));
+  if (!obstacles.length) return null;
+
+  const P = (u, v) => (horiz ? { x: u, y: v } : { x: v, y: u });
+  const uOf = (p) => (horiz ? p.x : p.y);
+  const vOf = (p) => (horiz ? p.y : p.x);
+  const uCenter = (n) => (horiz ? n.x + n.w / 2 : n.y + n.h / 2);
+  const vLowOf = (n) => (horiz ? n.y : n.x);
+  const vHighOf = (n) => (horiz ? n.y + n.h : n.x + n.w);
+
+  const u0 = uOf(start), u1 = uOf(end);
+  const v0 = vOf(start), v1 = vOf(end);
+  const uMin = Math.min(u0, u1), uMax = Math.max(u0, u1);
+  const vMin = Math.min(v0, v1), vMax = Math.max(v0, v1);
+
+  // Only boxes actually in the corridor between the two ends matter.
+  const spans = obstacles
+    .map((n) => rectOf(n, AVOID_MARGIN))
+    .map((r) => (horiz
+      ? { u0: r.x, u1: r.x + r.w, v0: r.y, v1: r.y + r.h }
+      : { u0: r.y, u1: r.y + r.h, v0: r.x, v1: r.x + r.w }))
+    .filter((b) => b.u1 > uMin && b.u0 < uMax && b.v1 > vMin - 1 && b.v0 < vMax + 1);
+  if (!spans.length) return null;
+
+  const rects = obstacles.map((n) => rectOf(n, 4));
+  const lowSide = Math.min(...spans.map((b) => b.v0));
+  const highSide = Math.max(...spans.map((b) => b.v1));
+  // Go around whichever way is shorter.
+  const order = Math.abs(lowSide - v0) <= Math.abs(highSide - v0) ? [true, false] : [false, true];
+
+  for (const goLow of order) {
+    // Clear the blockers *and* both endpoint boxes, so the crossing leg can't
+    // clip a tall source or target on its way past.
+    const cv = goLow
+      ? Math.min(lowSide, vLowOf(s) - AVOID_MARGIN, vLowOf(t) - AVOID_MARGIN)
+      : Math.max(highSide, vHighOf(s) + AVOID_MARGIN, vHighOf(t) + AVOID_MARGIN);
+    // A hand-placed anchor is a deliberate choice about where the arrow
+    // leaves the box, so it's kept; otherwise exit through the face the
+    // detour is on.
+    const sPoint = edge.fromAnchor
+      ? anchorAbsolutePoint(s, edge.fromAnchor)
+      : P(uCenter(s), goLow ? vLowOf(s) : vHighOf(s));
+    const tPoint = edge.toAnchor
+      ? anchorAbsolutePoint(t, edge.toAnchor)
+      : P(uCenter(t), goLow ? vLowOf(t) : vHighOf(t));
+    const path = [sPoint, P(uOf(sPoint), cv), P(uOf(tPoint), cv), tPoint];
+    if (!rects.some((r) => polylineHitsRect(path, r))) return path;
+  }
+  return null;
+}
+
 // ---------- Orthogonal routing ----------
 
 // The border exit/entry points and the default (unshifted) middle-segment
@@ -120,10 +396,29 @@ function orthogonalDefaultBase(edge, s, t) {
 // on the cross axis) keeps the route fully orthogonal — the same shape a
 // waypoint would produce, just derived from two numbers instead of an
 // explicit point list.
-function computeOrthogonalDefault(edge, s, t) {
+function computeOrthogonalDefault(edge, s, t, allEdges, allNodes) {
   const { horiz, start, end, mid } = orthogonalDefaultBase(edge, s, t);
-  const m1 = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : 0);
-  const m2 = mid + (typeof edge.elbowOffsetEnd === 'number' ? edge.elbowOffsetEnd : 0);
+  // The default jog position, nudged out of any box it would cross and off
+  // any corridor an earlier edge already occupies. Both are pure defaults:
+  // an edge with its own elbow offset uses that and nothing else.
+  const auto = defaultElbowAuto(edge, s, t, allEdges, allNodes);
+  // A jog shift can't help when the obstacle sits on the row/column the two
+  // nodes share — every Z is then the same straight line through it — so fall
+  // back to a detour that leaves the row. Dragging a corner afterwards sets
+  // an explicit elbow offset, which takes over and restores the plain Z.
+  if (auto === 0 && allNodes && typeof edge.elbowOffset !== 'number' && typeof edge.elbowOffsetEnd !== 'number') {
+    const straight = horiz
+      ? [start, { x: mid, y: start.y }, { x: mid, y: end.y }, end]
+      : [start, { x: start.x, y: mid }, { x: end.x, y: mid }, end];
+    const blocked = routeObstacles(edge, allNodes, routeBounds(start, end, AVOID_MARGIN))
+      .some((n) => polylineHitsRect(straight, rectOf(n, 4)));
+    if (blocked) {
+      const detour = orthogonalDetourPath(edge, s, t, allNodes);
+      if (detour) return detour;
+    }
+  }
+  const m1 = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : auto);
+  const m2 = mid + (typeof edge.elbowOffsetEnd === 'number' ? edge.elbowOffsetEnd : auto);
   if (m1 === m2) {
     if (horiz) return [start, { x: m1, y: start.y }, { x: m1, y: end.y }, end];
     return [start, { x: start.x, y: m1 }, { x: end.x, y: m1 }, end];
@@ -136,20 +431,32 @@ function computeOrthogonalDefault(edge, s, t) {
   return [start, { x: start.x, y: m1 }, { x: cross, y: m1 }, { x: cross, y: m2 }, { x: end.x, y: m2 }, end];
 }
 
+// The automatic part of a default elbow position — obstacle detour plus
+// corridor separation — shared by the path builder and by the corner-base
+// reporter below so a drag starts from exactly where the corner is drawn.
+function defaultElbowAuto(edge, s, t, allEdges, allNodes) {
+  if (typeof edge.elbowOffset === 'number' || typeof edge.elbowOffsetEnd === 'number') return 0;
+  if (!allNodes) return 0;
+  const avoid = autoAvoidElbowOffset(edge, s, t, allNodes);
+  const separate = allEdges ? orthogonalSeparationShift(edge, allEdges, allNodes) : 0;
+  return avoid + separate;
+}
+
 // canvas.js calls this to turn a drag position directly into a new
 // edge.elbowOffset/elbowOffsetEnd (absolute, not incremental) — {axis, base}
 // says which screen coordinate to read off the cursor and what to subtract
 // from it; c1/c2 are the two corners' current positions, so canvas.js can
 // tell which one a pointerdown landed nearest to.
-function computeOrthogonalCornerBases(edge, allNodes) {
+function computeOrthogonalCornerBases(edge, allNodes, allEdges) {
   const nodesById = {};
   for (const n of allNodes) nodesById[n.id] = n;
   const s = nodesById[edge.from];
   const t = nodesById[edge.to];
   if (!s || !t) return null;
   const { horiz, start, end, mid } = orthogonalDefaultBase(edge, s, t);
-  const m1 = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : 0);
-  const m2 = mid + (typeof edge.elbowOffsetEnd === 'number' ? edge.elbowOffsetEnd : 0);
+  const auto = defaultElbowAuto(edge, s, t, allEdges, allNodes);
+  const m1 = mid + (typeof edge.elbowOffset === 'number' ? edge.elbowOffset : auto);
+  const m2 = mid + (typeof edge.elbowOffsetEnd === 'number' ? edge.elbowOffsetEnd : auto);
   const c1 = horiz ? { x: m1, y: start.y } : { x: start.x, y: m1 };
   const c2 = horiz ? { x: m2, y: end.y } : { x: end.x, y: m2 };
   return { axis: horiz ? 'x' : 'y', base: mid, c1, c2 };
@@ -204,14 +511,16 @@ function computeOrthogonalWaypointed(edge, s, t, waypoints) {
   return points;
 }
 
-function computeOrthogonalPoints(edge, allNodes) {
+function computeOrthogonalPoints(edge, allEdges, allNodes) {
   const nodesById = {};
   for (const n of allNodes) nodesById[n.id] = n;
   const s = nodesById[edge.from];
   const t = nodesById[edge.to];
   if (!s || !t) return null;
   const waypoints = Array.isArray(edge.waypoints) ? edge.waypoints : [];
-  return waypoints.length ? computeOrthogonalWaypointed(edge, s, t, waypoints) : computeOrthogonalDefault(edge, s, t);
+  return waypoints.length
+    ? computeOrthogonalWaypointed(edge, s, t, waypoints)
+    : computeOrthogonalDefault(edge, s, t, allEdges, allNodes);
 }
 
 // ---------- Path building ----------
@@ -251,24 +560,6 @@ function pathFromPoints(points, rounded) {
   }
   const last = points[points.length - 1];
   return `${d} L ${last.x} ${last.y}`;
-}
-
-// Candidate positions for canvas.js's "virtual" handles — the faint dots a
-// drag turns into a real bend point. Every route reports its own, because
-// where they belong depends on the shape: a polyline puts one at each
-// segment's midpoint, while a quadratic arc's midpoint isn't on any segment
-// at all (see the curved branch of computeEdgeGeometry). Segments too short
-// to hold a legible dot are skipped rather than crowding the line.
-const VIRTUAL_HANDLE_MIN_SEG = 26;
-
-function segmentMidpoints(points) {
-  const out = [];
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i], b = points[i + 1];
-    if (Math.hypot(b.x - a.x, b.y - a.y) < VIRTUAL_HANDLE_MIN_SEG) continue;
-    out.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-  }
-  return out;
 }
 
 // ---------- Direct routing with explicit waypoints ----------
@@ -332,7 +623,7 @@ function applyLabelOffset(labelPos, edge) {
 
 function computeEdgeGeometry(edge, allEdges, allNodes) {
   if (edge.routing === 'orthogonal') {
-    const points = computeOrthogonalPoints(edge, allNodes);
+    const points = computeOrthogonalPoints(edge, allEdges, allNodes);
     if (!points) return null;
     const d = pathFromPoints(points, edge.rounded);
     const waypointed = Array.isArray(edge.waypoints) && edge.waypoints.length > 0;
@@ -356,7 +647,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     // canvas.js's nearestPointIndex(refs.slice(1,-1), ...) an empty list to
     // search rather than mistaking those corners for real bend points.
     const refs = waypointed ? [points[0], ...edge.waypoints, points[points.length - 1]] : [points[0], points[points.length - 1]];
-    return { start: points[0], end: points[points.length - 1], d, badge, labelPos, points, refs, virtuals: segmentMidpoints(points) };
+    return { start: points[0], end: points[points.length - 1], d, badge, labelPos, points, refs, samples: points };
   }
 
   // Direct routing with explicit bend points — the multi-bend counterpart of
@@ -375,7 +666,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
       labelPos: applyLabelOffset({ x: badge.x, y: badge.y - 20 }, edge),
       points,
       refs: points,
-      virtuals: segmentMidpoints(points),
+      samples: points,
     };
   }
 
@@ -388,7 +679,12 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
   const idx = group.findIndex((e) => e.id === edge.id);
   const mid = (group.length - 1) / 2;
   const autoBend = group.length > 1 ? (idx - mid) * 28 : 0;
-  const bend = typeof edge.curve === 'number' ? edge.curve : autoBend;
+  // Priority: the user's own bend, then the fan-out separation that keeps
+  // same-pair arrows apart, and only then the obstacle detour — a separated
+  // pair is already off the direct line, so bowing it again would double up.
+  const bend = typeof edge.curve === 'number'
+    ? edge.curve
+    : autoBend || autoAvoidCurveBend(edge, start, end, allNodes);
 
   const mx = (start.x + end.x) / 2;
   const my = (start.y + end.y) / 2;
@@ -414,21 +710,16 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
   // it and then try to splice it out of a waypoint list that doesn't exist.
   // One virtual handle goes at the curve's true midpoint instead, so dragging
   // it converts the arc into an explicit bend point right where it looked.
-  // Two of them, at a quarter and three quarters along, rather than one at
-  // the midpoint: the midpoint is where the step-number badge sits, and the
-  // badge paints over the handle and swallows the pointerdown. On a curve
-  // these are points on the actual quadratic (B(t) with t = 0.25 / 0.75), not
-  // on the chord, so they land where the line is drawn.
-  const quad = (t) => ({
-    x: (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * badge.x + t * t * end.x,
-    y: (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * badge.y + t * t * end.y,
-  });
-  const lerp = (t) => ({ x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t });
-  const at = bend === 0 ? lerp : quad;
-  const virtuals = Math.hypot(end.x - start.x, end.y - start.y) < VIRTUAL_HANDLE_MIN_SEG * 2
-    ? []
-    : [at(0.25), at(0.75)];
-  return { start, end, d, badge, labelPos, points, refs: [start, end], virtuals };
+  // `samples` has to follow the *drawn* path, and a quadratic's control point
+  // isn't on its own curve — so the arc is sampled rather than reported as
+  // the [start, control, end] triangle that `points` is.
+  const samples = bend === 0 ? [start, end] : sampleQuadratic(start, badge, end, 16);
+  // `refs` is the *editable* point list, and a curve has no editable interior
+  // point: its bend is `edge.curve`, a number, and the point in `points` is
+  // just that control point. Reporting it as a ref would make canvas.js hang
+  // a bend handle on it and then try to splice it out of a waypoint list that
+  // doesn't exist.
+  return { start, end, d, badge, labelPos, points, refs: [start, end], samples };
 }
 
 // Given a point the user dragged to, returns the perpendicular signed
@@ -442,6 +733,24 @@ function computeBendFromPoint(edge, allNodes, point) {
   const mx = (start.x + end.x) / 2;
   const my = (start.y + end.y) / 2;
   return (point.x - mx) * nx + (point.y - my) * ny;
+}
+
+// Closest point on a polyline to p, with its distance — canvas.js positions
+// the single hover handle with this, so the dot sits exactly on the line
+// under the pointer instead of at a fixed spot.
+function closestPointOnPolyline(points, p) {
+  let best = points[0], bestDist = Infinity;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    let t = lenSq === 0 ? 0 : ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const q = { x: a.x + t * dx, y: a.y + t * dy };
+    const d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (d < bestDist) { bestDist = d; best = q; }
+  }
+  return { point: best, dist: bestDist };
 }
 
 // ---------- Shared hit-testing for waypointed orthogonal routes ----------
