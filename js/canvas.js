@@ -1695,11 +1695,15 @@ function appendEdgeHandles(g, e, geo) {
   // dot is inside it, so moving onto the dot doesn't count as leaving the
   // edge and can't start a show/hide flicker loop.
   g.addEventListener('pointermove', (ev) => {
-    if (waypointDragCtx || elbowDragCtx || curveDragCtx || endpointDragCtx || labelDragCtx) return;
+    if (waypointDragCtx || segmentDragCtx || elbowDragCtx || curveDragCtx || endpointDragCtx || labelDragCtx) return;
     const p = toSVGCoords(ev.clientX, ev.clientY);
-    const { point, dist } = closestPointOnPolyline(geo.samples || geo.points, p);
-    const blocked = dist > EDGE_ADD_HOVER_RADIUS
-      || bends.some((b) => Math.hypot(b.x - point.x, b.y - point.y) < 14)
+    const { dist } = closestPointOnPolyline(geo.samples || geo.points, p);
+    if (dist > EDGE_ADD_HOVER_RADIUS) {
+      adder.setAttribute('display', 'none');
+      return;
+    }
+    const point = bendCandidatePoint(geo, p);
+    const blocked = bends.some((b) => Math.hypot(b.x - point.x, b.y - point.y) < 14)
       || Math.hypot(geo.badge.x - point.x, geo.badge.y - point.y) < 15;
     if (blocked) {
       adder.setAttribute('display', 'none');
@@ -2382,12 +2386,12 @@ const EDGE_ADD_HOVER_RADIUS = 16;
 
 function startEdgeBend(ev, edge) {
   ev.stopPropagation();
-  // Waypointed routes (either routing mode) move the nearest existing bend;
-  // an orthogonal route without waypoints slides one of its two default
-  // corners; a plain direct line sets its single arc. In every case a drag
-  // moves what's already there — adding a bend is its own gesture (drag a
-  // virtual handle, or double-click the line).
-  if (edge.waypoints && edge.waypoints.length) startWaypointDragFromLine(ev, edge);
+  // A bent route (either routing mode) moves the grabbed segment — or just
+  // the bend point, if that's what was grabbed; an orthogonal route without
+  // bends slides one of its two default corners; a plain direct line bows to
+  // follow the cursor. In every case the drag moves the line under your hand.
+  // Adding a bend is its own gesture: the dot on hover, or a double-click.
+  if (edge.waypoints && edge.waypoints.length) startSegmentDrag(ev, edge);
   else if (edge.routing === 'orthogonal') startElbowDrag(ev, edge);
   else startCurveDrag(ev, edge);
 }
@@ -2527,14 +2531,106 @@ function startWaypointDrag(ev, edge, index, opts = {}) {
   window.addEventListener('pointerup', onWaypointDragUp);
 }
 
-// Dragging the line body rather than a handle: figure out which bend point
-// (if any) is close enough to have been the intended grab.
-function startWaypointDragFromLine(ev, edge) {
+// ---- Dragging the line body: the grabbed segment moves ----
+// The cursor over a line is a hand, so a drag has to move something. It used
+// to move the nearest bend point *only* if the grab landed within
+// EDGE_POINT_GRAB_RADIUS of one, and do nothing at all otherwise — a dead
+// gesture on most of a bent line's length. Now the whole segment under the
+// cursor moves, which is both what the hand cursor promises and what draw.io
+// does. Grab a bend point itself and you still move just that point.
+
+let segmentDragCtx = null;
+
+function startSegmentDrag(ev, edge) {
   const geo = computeEdgeGeometry(edge, state.edges, state.nodes);
-  if (!geo) return;
+  if (!geo || !Array.isArray(edge.waypoints) || !edge.waypoints.length) return;
   const p0 = toSVGCoords(ev.clientX, ev.clientY);
-  const { index, dist } = nearestPointIndex(geo.refs.slice(1, -1), p0);
-  startWaypointDrag(ev, edge, dist < EDGE_POINT_GRAB_RADIUS ? index : -1);
+
+  const bends = geo.refs.slice(1, -1);
+  const near = nearestPointIndex(bends, p0);
+  if (near.index >= 0 && near.dist < EDGE_POINT_GRAB_RADIUS) {
+    startWaypointDrag(ev, edge, near.index);
+    return;
+  }
+
+  // refs is [start, ...waypoints, end], so refs[k] is waypoints[k - 1] and
+  // segment i spans refs[i] → refs[i + 1].
+  const { index } = nearestSegmentIndex(geo.refs, p0);
+  const a = geo.refs[index];
+  const b = geo.refs[index + 1];
+  const wps = edge.waypoints.map((w) => ({ ...w }));
+  let leftIdx = index - 1;
+  let rightIdx = index;
+  let insertedIndex = -1;
+
+  // A segment ending at a node can't drag that end along — the node owns it —
+  // so a bend point is planted there first and moves in its place. Same thing
+  // draw.io does when you drag a connector's end segment.
+  if (index === 0) {
+    wps.splice(0, 0, { x: a.x, y: a.y });
+    insertedIndex = 0;
+    leftIdx = 0;
+    rightIdx = 1;
+  } else if (index + 1 === geo.refs.length - 1) {
+    wps.push({ x: b.x, y: b.y });
+    insertedIndex = wps.length - 1;
+    rightIdx = wps.length - 1;
+  }
+
+  // An orthogonal segment may only move along its own perpendicular, or the
+  // route stops being orthogonal; a direct one translates freely.
+  let axis = 'xy';
+  if (edge.routing === 'orthogonal') {
+    axis = Math.abs(b.y - a.y) < Math.abs(b.x - a.x) ? 'y' : 'x';
+  }
+
+  edge.waypoints = wps;
+  segmentDragCtx = {
+    edge,
+    leftIdx,
+    rightIdx,
+    axis,
+    insertedIndex,
+    origin: [{ ...wps[leftIdx] }, { ...wps[rightIdx] }],
+    startClient: { x: ev.clientX, y: ev.clientY },
+    startSvg: p0,
+    moved: false,
+  };
+  renderAll();
+  window.addEventListener('pointermove', onSegmentDragMove);
+  window.addEventListener('pointerup', onSegmentDragUp);
+}
+
+function onSegmentDragMove(ev) {
+  if (!segmentDragCtx) return;
+  const c = segmentDragCtx;
+  if (!c.moved && Math.hypot(ev.clientX - c.startClient.x, ev.clientY - c.startClient.y) > 4) c.moved = true;
+  if (!c.moved) return;
+  const p = toSVGCoords(ev.clientX, ev.clientY);
+  const dx = c.axis === 'x' || c.axis === 'xy' ? p.x - c.startSvg.x : 0;
+  const dy = c.axis === 'y' || c.axis === 'xy' ? p.y - c.startSvg.y : 0;
+  c.edge.waypoints[c.leftIdx] = { x: c.origin[0].x + dx, y: c.origin[0].y + dy };
+  c.edge.waypoints[c.rightIdx] = { x: c.origin[1].x + dx, y: c.origin[1].y + dy };
+  renderAll();
+}
+
+function onSegmentDragUp() {
+  window.removeEventListener('pointermove', onSegmentDragMove);
+  window.removeEventListener('pointerup', onSegmentDragUp);
+  if (!segmentDragCtx) return;
+  const { edge, moved, insertedIndex } = segmentDragCtx;
+  segmentDragCtx = null;
+  if (moved) {
+    saveState();
+    return;
+  }
+  // A click, not a drag: take back the bend point this gesture planted, so
+  // clicking a line to select it never changes its shape.
+  if (insertedIndex >= 0 && edge.waypoints) {
+    edge.waypoints.splice(insertedIndex, 1);
+    if (!edge.waypoints.length) edge.waypoints = undefined;
+  }
+  selectItem('edge', edge.id);
 }
 
 // Dragging a virtual (segment-midpoint) handle: insert a real bend point
@@ -3170,7 +3266,7 @@ function buildEdgeMenuItems(e, menuX, menuY) {
 
   const isOrthogonal = e.routing === 'orthogonal';
   const routingItems = [
-    { label: 'Drag a hollow dot to add a bend', heading: true },
+    { label: 'Drag the line to move it', heading: true },
     {
       label: (!isOrthogonal ? '✓ ' : '   ') + 'Straight / Curved',
       action: () => {

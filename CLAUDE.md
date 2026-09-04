@@ -466,10 +466,22 @@ exports).
   border-drag source) — connecting *to* a container/text node still works,
   it just doesn't get a fixed anchor, matching the pre-anchor dynamic default.
 - Edge: dragging the line body (`startEdgeBend`, canvas.js) dispatches by
-  mode to one of three handlers — waypointed, either routing
-  (`startWaypointDragFromLine`, moves the nearest existing bend), default
-  orthogonal (`startElbowDrag`, slides the Z's corners), or plain direct
-  (`startCurveDrag`, sets the single arc). All three only ever *move* a bend.
+  mode to one of three handlers — bent, either routing (`startSegmentDrag`),
+  default orthogonal (`startElbowDrag`, slides the Z's corners), or plain
+  direct (`startCurveDrag`, bows the arc to follow the cursor). All three
+  move the line under the cursor; none of them adds a bend.
+  - **`startSegmentDrag`** moves the whole segment you grabbed: both of its
+    ends travel together, constrained to the segment's own perpendicular on
+    an orthogonal route (or the route would stop being orthogonal) and free
+    on a direct one. A grab within `EDGE_POINT_GRAB_RADIUS` of a bend point
+    moves just that point instead. An end segment terminates at a node, which
+    can't travel, so a bend point is planted at that end first and moves in
+    its place — same as draw.io dragging a connector's end segment — and a
+    click that never moves takes that planted point back out, so clicking a
+    line to select it can't reshape it. This replaced a version that moved
+    *the nearest bend point, if the grab was within 10px of one, and did
+    nothing at all otherwise*: the cursor over a line is a hand, so most of a
+    bent line promised a drag and delivered nothing.
   A plain click (no movement) selects the edge; right-click for the full menu
   (line style, routing, rounded corners, arrowhead, animate flow,
   thickness/color, protocol label, label style, "Straighten" to clear every
@@ -480,11 +492,16 @@ exports).
     (retarget the edge), a solid `.edge-waypoint-handle` on every real bend
     (drag to move, double-click to remove), and a faint
     `.edge-virtual-handle` "add a bend here" dot — *one* per edge, hidden
-    until the pointer comes within `EDGE_ADD_HOVER_RADIUS` of the line and
-    then tracking it along the route (projected onto `geo.samples`, the
-    polyline that follows the *drawn* path — a quadratic's control point
-    isn't on its own curve, so the arc is sampled). Dragging it inserts a
-    real bend there and drags it from the first pixel
+    until the pointer comes within `EDGE_ADD_HOVER_RADIUS` of the line
+    (measured against `geo.samples`, the polyline that follows the *drawn*
+    path — a quadratic's control point isn't on its own curve, so the arc is
+    sampled). It parks at the midpoint of the hovered segment
+    (`bendCandidatePoint` in arrows.js), deliberately *not* under the pointer:
+    the pointer is where a press lands, and a press on the line drags the
+    segment, so a dot tracking the cursor would intercept every one of those
+    presses. A single-span route has its step badge at that midpoint, so it
+    offers the quarter point on the pointer's side instead. Dragging the dot
+    inserts a real bend there and drags it from the first pixel
     (`startNewWaypointDrag`); a dot that's only *clicked* takes its
     speculative point back out, so a stray click never leaves a bend behind.
     One hover dot rather than a fixed dot per segment is deliberate: a

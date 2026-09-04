@@ -647,7 +647,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     // canvas.js's nearestPointIndex(refs.slice(1,-1), ...) an empty list to
     // search rather than mistaking those corners for real bend points.
     const refs = waypointed ? [points[0], ...edge.waypoints, points[points.length - 1]] : [points[0], points[points.length - 1]];
-    return { start: points[0], end: points[points.length - 1], d, badge, labelPos, points, refs, samples: points };
+    return { kind: 'polyline', start: points[0], end: points[points.length - 1], d, badge, labelPos, points, refs, samples: points };
   }
 
   // Direct routing with explicit bend points — the multi-bend counterpart of
@@ -659,6 +659,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
     if (!points) return null;
     const badge = pointAtPolylineFraction(points, 0.5);
     return {
+      kind: 'polyline',
       start: points[0],
       end: points[points.length - 1],
       d: pathFromPoints(points, edge.rounded),
@@ -719,7 +720,7 @@ function computeEdgeGeometry(edge, allEdges, allNodes) {
   // just that control point. Reporting it as a ref would make canvas.js hang
   // a bend handle on it and then try to splice it out of a waypoint list that
   // doesn't exist.
-  return { start, end, d, badge, labelPos, points, refs: [start, end], samples };
+  return { kind: bend === 0 ? 'straight' : 'curve', start, end, d, badge, labelPos, points, refs: [start, end], samples };
 }
 
 // Given a point the user dragged to, returns the perpendicular signed
@@ -751,6 +752,29 @@ function closestPointOnPolyline(points, p) {
     if (d < bestDist) { bestDist = d; best = q; }
   }
   return { point: best, dist: bestDist };
+}
+
+// Where the "add a bend here" dot belongs for a pointer at p: the midpoint of
+// the drawn segment under the pointer — deliberately *not* under the pointer
+// itself, because the pointer is where a press lands and a press on the line
+// drags the segment. The dot has to be a target you aim at, not something
+// parked under every press.
+//
+// A single-span route (straight or curved) already has its step badge at that
+// midpoint, so it offers the quarter point on the pointer's own side instead.
+function bendCandidatePoint(geo, p) {
+  const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  if (geo.kind === 'polyline') {
+    const { index } = nearestSegmentIndex(geo.points, p);
+    const a = geo.points[index], b = geo.points[index + 1];
+    const mid = lerp(a, b, 0.5);
+    if (Math.hypot(mid.x - geo.badge.x, mid.y - geo.badge.y) >= 16) return mid;
+    const nearA = Math.hypot(p.x - a.x, p.y - a.y) <= Math.hypot(p.x - b.x, p.y - b.y);
+    return lerp(a, b, nearA ? 0.25 : 0.75);
+  }
+  const nearStart = Math.hypot(p.x - geo.start.x, p.y - geo.start.y)
+    <= Math.hypot(p.x - geo.end.x, p.y - geo.end.y);
+  return pointAtPolylineFraction(geo.samples, nearStart ? 0.25 : 0.75);
 }
 
 // ---------- Shared hit-testing for waypointed orthogonal routes ----------
