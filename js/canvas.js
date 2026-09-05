@@ -677,6 +677,7 @@ function renderAll() {
   const showEmptyState = state.nodes.length === 0 && !emptyStateDismissed;
   if (emptyState) emptyState.style.display = showEmptyState ? 'flex' : 'none';
 
+  renderGroupOutline();
   renderSimAnnotations();
   renderSimFailures();
   updateSimSummary();
@@ -1847,9 +1848,31 @@ function startDragNode(ev, node) {
   ev.preventDefault();
   if (ev.shiftKey) return; // shift-click toggles multi-select instead of dragging (see onNodeClick)
 
-  const isGroupDrag = state.multiIds.has(node.id) && state.multiIds.size > 1;
-  if (!isGroupDrag) selectItem('node', node.id);
-  const groupIds = isGroupDrag ? [...state.multiIds] : [node.id];
+  // What a drag moves, in priority order:
+  //   1. the whole multi-selection, if this node is part of one;
+  //   2. just this node, if it's a group member that has been drilled into
+  //      (Alt-click makes a member the sole selection) — so a member can be
+  //      nudged out of place without ungrouping;
+  //   3. otherwise its group, and — for a container — whatever sits inside
+  //      it, which is what makes the palette's Group/Region boxes useful.
+  // Alt is deliberately *not* the modifier here: during a drag it already
+  // means "bypass snapping", and overloading it would make one gesture do two
+  // unrelated things.
+  const isMultiDrag = state.multiIds.has(node.id) && state.multiIds.size > 1;
+  const drilledIn = typeof node.groupId === 'number'
+    && state.selected && state.selected.kind === 'node' && state.selected.id === node.id;
+  let movingIds;
+  if (isMultiDrag) {
+    movingIds = [...state.multiIds];
+  } else if (drilledIn) {
+    movingIds = [node.id];
+  } else {
+    const own = typeof node.groupId === 'number' ? groupMemberIds(node.groupId) : [node.id];
+    const carried = node.container ? containedNodeIds(node) : [];
+    movingIds = [...expandToGroups([...own, ...carried])];
+    selectNodeOrGroup(node.id);
+  }
+  const groupIds = movingIds;
 
   const start = toSVGCoords(ev.clientX, ev.clientY);
   dragCtx = {
@@ -2018,6 +2041,7 @@ function onMarqueeUp() {
       .map((n) => n.id);
     if (!marqueeCtx.additive) state.multiIds.clear();
     for (const id of hits) state.multiIds.add(id);
+    state.multiIds = expandToGroups([...state.multiIds]);
     state.selected = state.multiIds.size === 1 ? { kind: 'node', id: [...state.multiIds][0] } : null;
     if (marqueeCtx.rectEl) marqueeCtx.rectEl.remove();
     marqueeJustFinished = true;
@@ -2734,17 +2758,169 @@ function selectItem(kind, id) {
 
 // Shift-click a node to add/remove it from a multi-selection instead of
 // replacing the current selection outright.
+// Dashed frame around the selected group's extent. Selection-only and
+// `no-export`, so grouping never changes what a diagram looks like — it's an
+// editing relationship, not a drawn box (the palette's Group/Region shapes
+// are there for when you do want one on the page).
+const GROUP_OUTLINE_PAD = 14;
+
+function renderGroupOutline() {
+  const existing = layerOverlay.querySelector('.group-outline');
+  if (existing) existing.remove();
+  const groupIds = selectionGroupIds();
+  if (groupIds.length !== 1) return; // nothing, or a mixed selection
+  const members = groupMemberIds(groupIds[0]).map(nodeById).filter(Boolean);
+  if (members.length < 2) return;
+  const minX = Math.min(...members.map((n) => n.x));
+  const minY = Math.min(...members.map((n) => n.y));
+  const maxX = Math.max(...members.map((n) => n.x + n.w));
+  const maxY = Math.max(...members.map((n) => n.y + n.h));
+  layerOverlay.appendChild(el('rect', {
+    class: 'group-outline no-export',
+    x: minX - GROUP_OUTLINE_PAD,
+    y: minY - GROUP_OUTLINE_PAD,
+    width: maxX - minX + GROUP_OUTLINE_PAD * 2,
+    height: maxY - minY + GROUP_OUTLINE_PAD * 2,
+    rx: 12,
+  }));
+}
+
+// ---------- Groups ----------
+// `node.groupId` (a plain number shared by the members) is the whole model —
+// no group objects, no nesting, no tree to keep in sync. Everything else
+// falls out of the multi-selection machinery that already existed: selecting
+// any member selects them all, and drag/copy/delete/layer already act on
+// `state.multiIds`.
+//
+// Deliberately flat: grouping a selection that already contains groups melts
+// them into one new group rather than nesting, which is what a diagramming
+// tool's Group does when you group across existing groups, and it means a
+// node's membership is always answerable by reading one field.
+
+function newGroupId() {
+  let max = 0;
+  for (const n of state.nodes) {
+    if (typeof n.groupId === 'number' && n.groupId > max) max = n.groupId;
+  }
+  return max + 1;
+}
+
+function groupMemberIds(groupId) {
+  return state.nodes.filter((n) => n.groupId === groupId).map((n) => n.id);
+}
+
+// Any id in a group pulls in the rest of it, so a selection can never hold
+// half a group — the invariant every gesture below relies on.
+function expandToGroups(ids) {
+  const out = new Set(ids);
+  for (const id of ids) {
+    const n = nodeById(id);
+    if (n && typeof n.groupId === 'number') for (const m of groupMemberIds(n.groupId)) out.add(m);
+  }
+  return out;
+}
+
+// The plain-click selection: a grouped node selects its whole group, an
+// ungrouped one selects itself.
+function selectNodeOrGroup(nodeId) {
+  const n = nodeById(nodeId);
+  if (!n || typeof n.groupId !== 'number') {
+    selectItem('node', nodeId);
+    return;
+  }
+  const members = groupMemberIds(n.groupId);
+  if (members.length < 2) {
+    selectItem('node', nodeId);
+    return;
+  }
+  state.selected = null;
+  state.multiIds = new Set(members);
+  renderAll();
+}
+
+function groupSelected() {
+  // Whole groups come along: grouping A (already grouped with B) and D melts
+  // all three into one rather than leaving B behind in a group of one. Every
+  // UI path already selects groups whole, so this mostly guards the model.
+  const ids = [...expandToGroups(selectedNodeIds())];
+  if (ids.length < 2) return;
+  const id = newGroupId();
+  for (const nid of ids) {
+    const n = nodeById(nid);
+    if (n) n.groupId = id;
+  }
+  pruneSingletonGroups();
+  state.selected = null;
+  state.multiIds = new Set(ids);
+  renderAll();
+  saveState();
+}
+
+function ungroupSelected() {
+  const ids = selectedNodeIds();
+  if (!ids.length) return;
+  let changed = false;
+  // Ungrouping one member ungroups the group it belongs to — a half-dissolved
+  // group would leave the rest behaving as a unit for no visible reason.
+  const touched = expandToGroups(ids);
+  for (const nid of touched) {
+    const n = nodeById(nid);
+    if (n && typeof n.groupId === 'number') { n.groupId = undefined; changed = true; }
+  }
+  if (!changed) return;
+  state.multiIds = new Set(touched);
+  state.selected = state.multiIds.size === 1 ? { kind: 'node', id: [...state.multiIds][0] } : null;
+  renderAll();
+  saveState();
+}
+
+// A group of one isn't a group. Called after deletions, which are the only
+// way to get there.
+function pruneSingletonGroups() {
+  const counts = new Map();
+  for (const n of state.nodes) {
+    if (typeof n.groupId === 'number') counts.set(n.groupId, (counts.get(n.groupId) || 0) + 1);
+  }
+  for (const n of state.nodes) {
+    if (typeof n.groupId === 'number' && counts.get(n.groupId) < 2) n.groupId = undefined;
+  }
+}
+
+function selectionGroupIds() {
+  const ids = new Set();
+  for (const nid of selectedNodeIds()) {
+    const n = nodeById(nid);
+    if (n && typeof n.groupId === 'number') ids.add(n.groupId);
+  }
+  return [...ids];
+}
+
+// Every node that a container's box fully encloses — the set a container drag
+// carries with it. Geometric, not stored: a node is "in" a container because
+// it sits inside it, which is the only definition that stays true when either
+// one is moved or resized by hand.
+function containedNodeIds(container) {
+  return state.nodes
+    .filter((n) => n.id !== container.id
+      && n.x >= container.x && n.x + n.w <= container.x + container.w
+      && n.y >= container.y && n.y + n.h <= container.y + container.h)
+    .map((n) => n.id);
+}
+
 function toggleMultiSelect(nodeId) {
+  const n = nodeById(nodeId);
+  const members = n && typeof n.groupId === 'number' ? groupMemberIds(n.groupId) : [nodeId];
   if (state.multiIds.has(nodeId)) {
-    state.multiIds.delete(nodeId);
+    for (const id of members) state.multiIds.delete(id);
   } else {
     // First shift-click after a plain single-select folds that selection in,
     // so shift-clicking a second node grows a 2-item set rather than losing it.
     if (state.multiIds.size === 0 && state.selected && state.selected.kind === 'node') {
       state.multiIds.add(state.selected.id);
     }
-    state.multiIds.add(nodeId);
+    for (const id of members) state.multiIds.add(id);
   }
+  state.multiIds = expandToGroups([...state.multiIds]);
   state.selected = state.multiIds.size === 1 ? { kind: 'node', id: [...state.multiIds][0] } : null;
   renderAll();
 }
@@ -2753,8 +2929,12 @@ function onNodeClick(ev, n) {
   ev.stopPropagation();
   if (ev.shiftKey) {
     toggleMultiSelect(n.id);
-  } else {
+  } else if (ev.altKey) {
+    // Drill into a group: Alt picks out the one node under the cursor, so a
+    // member can still be renamed, restyled or resized without ungrouping.
     selectItem('node', n.id);
+  } else {
+    selectNodeOrGroup(n.id);
   }
 }
 
@@ -2775,6 +2955,7 @@ function deleteSelected() {
     for (const id of state.multiIds) removeNode(id);
     state.multiIds.clear();
     state.selected = null;
+    pruneSingletonGroups();
     renderAll();
     saveState();
     return;
@@ -2784,6 +2965,7 @@ function deleteSelected() {
   if (state.selected.kind === 'node') removeNode(state.selected.id);
   else removeEdge(state.selected.id);
   state.selected = null;
+  pruneSingletonGroups();
   renderAll();
   saveState();
 }
@@ -2883,6 +3065,18 @@ function pasteNode(pos) {
     const node = { ...c, id: state.nextNodeId++, x: anchorX + (c.x - minX), y: anchorY + (c.y - minY) };
     state.nodes.push(node);
     newIds.push(node.id);
+  }
+
+  // A pasted copy of a group is a *new* group: reusing the source's id would
+  // silently weld the copy to the original, so selecting one would select six
+  // boxes across two places on the canvas.
+  const groupRemap = new Map();
+  for (const id of newIds) {
+    const n = nodeById(id);
+    if (n && typeof n.groupId === 'number') {
+      if (!groupRemap.has(n.groupId)) groupRemap.set(n.groupId, newGroupId() + groupRemap.size);
+      n.groupId = groupRemap.get(n.groupId);
+    }
   }
 
   // The arrows between them come along, re-pointed at the new node ids.
@@ -3162,11 +3356,27 @@ function buildNodeMenuItems(n, menuX, menuY) {
     items.push({ label: 'Simulation', submenu: simItems });
   }
   items.push('-');
+  // Reachable on a grouped node via Alt-click, which selects the one member.
+  if (typeof n.groupId === 'number') items.push({ label: 'Ungroup    ⌘⇧G', action: () => ungroupSelected() });
   items.push({ label: 'Reset Size', action: () => resetNodeSize(n) });
   items.push({ label: 'Bring to Front    ]', action: () => bringToFront(n.id) });
   items.push({ label: 'Send to Back    [', action: () => sendToBack(n.id) });
   items.push('-');
   items.push({ label: 'Delete', action: () => deleteSelected() });
+  return items;
+}
+
+// Shared by the multi-select menu and a single grouped node's menu, so the
+// two can't drift — same rule as the rest of the menu builders.
+function buildGroupMenuItems() {
+  const items = [];
+  const ids = selectedNodeIds();
+  const groups = selectionGroupIds();
+  // "Group" is pointless when the selection is already exactly one group.
+  const alreadyOneGroup = groups.length === 1 && groupMemberIds(groups[0]).length === ids.length;
+  if (ids.length > 1 && !alreadyOneGroup) items.push({ label: 'Group    ⌘G', action: () => groupSelected() });
+  if (groups.length) items.push({ label: 'Ungroup    ⌘⇧G', action: () => ungroupSelected() });
+  if (items.length) items.push('-');
   return items;
 }
 
@@ -3177,6 +3387,7 @@ function buildMultiSelectMenuItems() {
     { label: 'Duplicate    ⌘D', action: () => duplicateSelected() },
     { label: 'Copy    ⌘C', action: () => copySelectedNode() },
     '-',
+    ...buildGroupMenuItems(),
     {
       label: 'Reset Size',
       action: () => {
@@ -3510,6 +3721,12 @@ function onKeyDown(ev) {
   if (mod && ev.key.toLowerCase() === 'y') {
     ev.preventDefault();
     redo();
+    return;
+  }
+  if (mod && ev.key.toLowerCase() === 'g') {
+    ev.preventDefault();
+    if (ev.shiftKey) ungroupSelected();
+    else groupSelected();
     return;
   }
   if (mod && ev.key.toLowerCase() === 'a') {

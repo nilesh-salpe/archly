@@ -252,6 +252,7 @@ function diagramToYAMLObject() {
       // Without this a hand-resized height would be undone by the load-time
       // refitAllNodeHeights() pass, which re-derives h from the label.
       if (n.manualH) obj.manualH = true;
+      if (typeof n.groupId === 'number') obj.groupId = n.groupId;
       if (n.fillColor) obj.fillColor = n.fillColor;
       if (n.strokeColor) obj.strokeColor = n.strokeColor;
       if (n.imageSrc) obj.imageSrc = n.imageSrc;
@@ -338,6 +339,7 @@ function importYAMLFile(file) {
         textAlign: typeof spec.textAlign === 'string' ? spec.textAlign : undefined,
         hideIcon: spec.hideIcon === true ? true : undefined,
         manualH: spec.manualH === true ? true : undefined,
+        groupId: typeof spec.groupId === 'number' ? spec.groupId : undefined,
         fillColor: typeof spec.fillColor === 'string' ? spec.fillColor : undefined,
         strokeColor: typeof spec.strokeColor === 'string' ? spec.strokeColor : undefined,
         imageSrc: typeof spec.imageSrc === 'string' ? spec.imageSrc : undefined,

@@ -37,7 +37,7 @@ const PATTERN_FILES = [
 
 // Cache-busting for the pattern fetches below — keep this in sync with the
 // ?v= bumped on index.html's <script>/<link> tags on every deploy.
-const ASSET_VERSION = '42';
+const ASSET_VERSION = '43';
 
 let PATTERNS = [];
 
@@ -129,6 +129,7 @@ function loadPattern(id) {
       // Lets a pattern pin a box taller than its label needs — otherwise the
       // load-time refitAllNodeHeights() pass would shrink it back.
       manualH: spec.manualH === true ? true : undefined,
+      groupId: typeof spec.groupId === 'number' ? spec.groupId : undefined,
     };
     idMap[spec.id] = nid;
     nodes.push(node);

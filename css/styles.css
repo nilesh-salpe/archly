@@ -1068,6 +1068,18 @@ body[data-toolbar-pos='bottom'] .brand-watermark { top: 6px; bottom: auto; }
 
 .pattern-panel-item:hover { background: var(--bg); }
 
+/* The frame drawn around a selected group (renderGroupOutline in canvas.js).
+   Lives in the overlay layer and is stripped from exports — grouping is an
+   editing relationship, not part of the drawing. */
+.group-outline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 8 5;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
 /* Group heading inside the picker's two-column grid — spans both columns so
    the rows below it stay paired up. */
 .pattern-panel-heading {

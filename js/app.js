@@ -308,6 +308,9 @@ function buildHelpPanel() {
       <dt>drag the small dot</dt><dd>Hover a selected line and one appears mid-segment — drag it to add a bend</dd>
       <dt>double-click a line</dt><dd>Add a bend there — or clear a curve's arc</dd>
       <dt>shift-click</dt><dd>Add/remove a node from a multi-selection</dd>
+      <dt>click a grouped node</dt><dd>Selects the whole group — drag it and the group moves</dd>
+      <dt>Alt-click a grouped node</dt><dd>Picks out that one node, so you can move or restyle it without ungrouping</dd>
+      <dt>drag a container</dt><dd>Carries everything inside it along</dd>
       <dt>drag empty canvas</dt><dd>Rubber-band select multiple nodes</dd>
       <dt>right-click</dt><dd>Full menu for the node/arrow under the cursor</dd>
     </dl>
@@ -316,6 +319,7 @@ function buildHelpPanel() {
       <dt>⌘Z / ⌘⇧Z</dt><dd>Undo / redo</dd>
       <dt>⌘C / ⌘V / ⌘D</dt><dd>Copy / paste / duplicate selection</dd>
       <dt>⌘A</dt><dd>Select all nodes</dd>
+      <dt>⌘G / ⌘⇧G</dt><dd>Group / ungroup the selection</dd>
       <dt>Arrow keys</dt><dd>Nudge selection 1px (10px with Shift)</dd>
       <dt>[ / ]</dt><dd>Send to back / bring to front</dd>
       <dt>Delete</dt><dd>Remove selection</dd>

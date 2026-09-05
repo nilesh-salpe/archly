@@ -112,6 +112,32 @@ exports).
     stays the single-item selection and is `null` whenever `multiIds` holds
     0 or 2+ nodes. Dragging any member of a multi-selection moves the whole
     group (`startDragNode`'s `isGroupDrag` branch).
+  - **Groups**: `node.groupId` (a plain number shared by the members) is the
+    entire model — no group objects, no nesting, no tree to keep in sync.
+    Everything else falls out of the multi-selection machinery that already
+    existed: `selectNodeOrGroup` makes a plain click select every member, and
+    drag/copy/delete/layer already act on `state.multiIds`. Deliberately flat:
+    `groupSelected` melts any groups the selection touches into one new group
+    (`expandToGroups`) rather than nesting, so membership is always answerable
+    by reading one field. `pruneSingletonGroups` runs after deletes and
+    grouping, because a group of one isn't a group. Paste remaps group ids
+    (`pasteNode`) or a pasted copy would be welded to the original.
+    - **Drilling in**: Alt-click selects the single node under the cursor
+      instead of its group, so a member can be renamed, restyled or resized
+      without ungrouping; `startDragNode` then moves just that node while it
+      is the sole selection. Alt is deliberately *not* the drag modifier for
+      this — during a drag it already means "bypass snapping".
+    - **The outline** (`renderGroupOutline`) is drawn only while the group is
+      selected, in the overlay layer and `no-export`: grouping is an editing
+      relationship, not something added to the drawing. The palette's
+      Group/Region container shapes are the way to put a real box on the page.
+  - **Containers carry their contents**: dragging a Region/AZ/VPC/Group box
+    moves every node its rect fully encloses (`containedNodeIds`), which is
+    what every diagramming tool does and what makes those shapes worth having.
+    Membership is geometric rather than stored — a node is "in" a container
+    because it sits inside it, the only definition that stays true when either
+    is moved or resized by hand. Resizing a container still leaves its
+    contents alone.
   - **Snapping**: single-node drags snap to a 10px grid, or to alignment with
     other nodes' edges/centers (drawn as `.align-guide` lines) when within
     threshold — see `computeAlignmentSnap`/`snapToGrid` in the node-dragging
@@ -575,6 +601,7 @@ exports).
   place — `buildNodeMenuItems`/`buildEdgeMenuItems`/`buildMultiSelectMenuItems`
   in `js/canvas.js` — and are rendered by both the right-click context menu
   and the toolbar's "Edit ▾" button. Extend those functions, not the callers.
+- Group/ungroup: ⌘G / ⌘⇧G, or the right-click menu on a multi-selection.
 - Multi-select: shift-click a node to add/remove it from the selection, or
   drag from empty canvas for a marquee box (shift-drag adds to the existing
   set). ⌘A selects all. Delete/duplicate/copy/layer act on the whole group;
